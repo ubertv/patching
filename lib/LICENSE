@@ -1,0 +1,72 @@
+Module data licence
+===================
+
+The jack data in this directory is licensed under a Creative Commons
+Attribution 4.0 International License (CC BY 4.0). This is NOT the MIT licence
+that covers the rest of this repository.
+
+    Copyright (c) 2026 Gavin Sade and contributors
+    https://github.com/ubertv/patching
+
+Full legal code: https://creativecommons.org/licenses/by/4.0/legalcode
+Human-readable summary: https://creativecommons.org/licenses/by/4.0/
+
+
+Why this directory is licensed differently
+------------------------------------------
+
+It is a database, not software, and it contains three different kinds of thing.
+
+Facts. Where a socket sits on a panel and what is printed next to it are facts
+about physical objects. Nobody can own those, here or anywhere.
+
+Prose. The normalling notes were written by hand, one module at a time. That is
+original expression and it is covered by copyright.
+
+The compilation. Assembling and verifying it took real work. In the EU and UK
+that investment is protected by a sui generis database right, which exists
+separately from copyright.
+
+MIT is a software licence. It grants permissions over "the Software" and never
+mentions database rights, so applying it here would leave anyone in a
+database-right jurisdiction guessing about what they were allowed to do with the
+compilation. CC BY 4.0 covers all three cases, and version 4.0 specifically
+because it is the first CC version to pull sui generis database rights
+explicitly into scope, at Section 4 of the legal code.
+
+
+Using it
+--------
+
+Keep the copyright line above, state that the data is CC BY 4.0, link back, and
+say if you changed anything. A credit line in an about box, a readme or a
+footnote is enough. You do not need to cite individual jacks.
+
+You can use it commercially. You can fold it into a project under any licence,
+including a closed one. You can correct it, extend it, and redistribute it.
+
+
+Contributing
+------------
+
+Contributions to this directory are accepted under the same licence, CC BY 4.0.
+There is no agreement to sign. Opening a pull request is taken as offering your
+contribution on those terms.
+
+What matters more than the licence is provenance. Say where each jack came from:
+which manual, which panel photograph, which module in front of you. Anything
+the source could not settle goes in the module's "note". The value of this data
+is that it can be trusted, and that only survives if every addition can be
+traced back to something.
+
+
+Material that is not covered
+----------------------------
+
+Anything added later under someone else's terms carries those terms, not these,
+and will be marked where it sits. Panel photographs are the likely case: for
+example, Mutable Instruments published their hardware files under CC BY-SA 3.0,
+so any artwork derived from those stays CC BY-SA 3.0 with attribution to them.
+
+Manufacturer names and module names are trademarks of their owners. Naming a
+module in order to document it is nominative use and is not a claim on the mark.

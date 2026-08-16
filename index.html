@@ -1,0 +1,3143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Patching</title>
+<link rel="icon" href="img/icon.svg" type="image/svg+xml">
+<link rel="icon" href="img/icon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<meta name="theme-color" content="#23272d">
+<script>
+/* Before first paint, or the page flashes light then snaps dark. Duplicated in
+   all three pages because each one has to stand alone off a filesystem. */
+(function(){
+  var t = null;
+  try { t = localStorage.getItem("patching-theme-v1"); } catch(e){}
+  if (t !== "dark" && t !== "light")
+    t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", t);
+})();
+</script>
+<meta name="description" content="Signal flow diagrams for modular synthesizers. Write the patch as text and it draws the diagram.">
+<meta property="og:title" content="Patching">
+<meta property="og:description" content="Signal flow diagrams for modular synthesizers. Write the patch as text and it draws the diagram.">
+<!-- Absolute, because social scrapers do not resolve relative URLs. Change the
+     host if you move it. -->
+<meta property="og:image" content="https://isgav.in/patching/img/social.png">
+<meta property="og:url" content="https://isgav.in/patching/">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+:root{
+  /* Paper first. The diagram is the product and it gets printed, so the whole
+     interface is paper stock and the canvas stops being a white hole punched in
+     a dark app. --mat is the desk the page sits on. */
+  --paper:#f7f5f1; --surface:#fffefb; --surface2:#efece5; --mat:#e4e0d7;
+  --line:#dcd7cd; --line2:#c8c2b6;
+  --ink:#1f1d1a; --ink2:#5b5750; --ink3:#8f8a80;
+  --accent:#2f5fd0; --accent-soft:#e8eefb;
+  --ok:#1a6f4d; --warn:#8a6208; --bad:#a3312b;
+  /* Message strips. Named so the dark theme can restate them in one place. */
+  --err-bg:#fdeceb; --err-ink:#7d2521;
+  --warn-bg:#fdf6e6; --warn-ink:#6b4d07;
+  --ok-bg:#eaf5ef;  --ok-ink:#155c40;
+  --shadow:rgba(31,29,26,.16); --shadow-soft:rgba(31,29,26,.07);
+  /* The diagram sheet. Its own variable because the diagram is an object on
+     the desk, not part of the interface surface. */
+  --sheet:#ffffff;
+
+  /* No webfont: self-hosting means shipping binaries and a CDN link would add a
+     network dependency to something that otherwise has none. This picks the best
+     available locally and degrades quietly. */
+  --sans:"SF Pro Text",-apple-system,"Inter","IBM Plex Sans","Segoe UI",Roboto,
+         "Helvetica Neue",Arial,sans-serif;
+  --mono:"SF Mono","JetBrains Mono","IBM Plex Mono","Cascadia Code",
+         ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+
+/* Dark. Same paper metaphor turned over: the mat is the darkest thing, the
+   diagram sheet the lightest, so the page still reads as an object on a desk.
+   Set on <html> before first paint, so there is no flash of the wrong theme. */
+:root[data-theme="dark"]{
+  --paper:#17181a; --surface:#1e2023; --surface2:#282b2f; --mat:#0f1012;
+  --line:#33373c; --line2:#454a51;
+  --ink:#e8e6e1; --ink2:#a9a49c; --ink3:#7b766e;
+  --accent:#6c9bff; --accent-soft:#1c2740;
+  --ok:#4fbf8f; --warn:#d8a63c; --bad:#e2726b;
+  --err-bg:#2c1c1b;  --err-ink:#f0a49d;
+  --warn-bg:#2b2415; --warn-ink:#e3c079;
+  --ok-bg:#16271f;   --ok-ink:#7fd3ac;
+  --shadow:rgba(0,0,0,.55); --shadow-soft:rgba(0,0,0,.35);
+  --sheet:#1a1c1f;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--paper); color:var(--ink); overflow:hidden;
+  font:13.5px/1.55 var(--sans);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  display:flex; flex-direction:column;
+}
+button,input,textarea,select{font:inherit; color:inherit}
+button{
+  background:var(--surface); border:1px solid var(--line2); color:var(--ink);
+  border-radius:5px; padding:4px 10px; cursor:pointer;
+  box-shadow:0 1px 0 var(--shadow-soft);
+}
+button:hover{background:var(--surface2); border-color:var(--line2)}
+button:active{background:var(--surface2); filter:brightness(.94)}
+button.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+button.primary:hover{filter:brightness(1.12)}
+button:disabled{opacity:.4; cursor:not-allowed}
+input[type=text],textarea,select{
+  background:var(--surface); border:1px solid var(--line2); border-radius:5px;
+  padding:4px 8px; outline:none;
+}
+input:focus,textarea:focus,select:focus{
+  border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft);
+}
+a{color:var(--accent)}
+.mono{font-family:var(--mono)}
+kbd{
+  background:var(--surface2); border:1px solid var(--line2); border-bottom-width:2px;
+  border-radius:4px; padding:0 4px; font:11px/1.6 var(--mono); color:var(--ink2);
+}
+
+#top{
+  display:flex; align-items:center; gap:9px; padding:9px 14px; flex:none;
+  background:var(--surface); border-bottom:1px solid var(--line);
+}
+#brandmark{display:block; flex:none; border-radius:50%}
+#top h1{font-size:14px; margin:0; font-weight:650; letter-spacing:-.01em}
+#top h1 span{color:var(--ink3); font-weight:400; letter-spacing:0}
+#top .spacer{flex:1}
+#pname{width:230px}
+/* Navigation reads as tabs, not as links with arrows. An arrow tells you
+   nothing about where you're going or where you already are. */
+#nav{display:flex; gap:2px; background:var(--surface2); padding:2px;
+     border-radius:7px; border:1px solid var(--line)}
+#nav a{
+  color:var(--ink2); text-decoration:none; padding:3px 12px; border-radius:5px;
+  font-size:12.5px; font-weight:500;
+}
+#nav a:hover{color:var(--ink); background:var(--surface)}
+#nav a.active{background:var(--surface); color:var(--ink); font-weight:600;
+  box-shadow:0 1px 2px var(--shadow-soft)}
+.vrule{width:1px; height:20px; background:var(--line); flex:none; margin:0 3px}
+
+/* Dropdowns. Everything is a labelled word — no bare glyphs, because a "?" is
+   only obvious to someone who already knows what's behind it. */
+.menu{position:relative}
+.menu > button::after{content:"▾"; margin-left:5px; font-size:9px; opacity:.55;
+  position:relative; top:-1px}
+.menu.open > button{background:var(--surface2); border-color:var(--line2)}
+.dropdown{
+  position:absolute; top:calc(100% + 5px); right:0; min-width:210px; z-index:40;
+  background:var(--surface); border:1px solid var(--line2); border-radius:7px;
+  padding:4px; display:none; box-shadow:0 10px 30px var(--shadow);
+}
+.menu.open .dropdown{display:block}
+/* Menus hang from the edge they sit nearest, so one on the left opens rightward
+   and one on the right opens leftward. Either way it stays on screen and stays
+   under the button that opened it. */
+.menu.left .dropdown{left:0; right:auto}
+.dropdown button,.dropdown a{
+  display:block; width:100%; text-align:left; background:none; border:none;
+  padding:6px 10px; border-radius:5px; font-size:12.5px; color:var(--ink);
+  text-decoration:none; cursor:pointer; box-shadow:none;
+}
+.dropdown button:hover,.dropdown a:hover{background:var(--accent-soft); color:var(--accent)}
+.dropdown button.danger:hover{background:var(--err-bg); color:var(--bad)}
+/* A refused item shouldn't light up under the pointer as though it were live.
+   The tooltip is the explanation; the lack of highlight is the signal. */
+.dropdown button:disabled:hover{background:none; color:var(--ink)}
+.dropdown hr{border:none; border-top:1px solid var(--line); margin:4px 6px}
+.dropdown .lbl{padding:6px 10px 3px; font-size:10px; text-transform:uppercase;
+  letter-spacing:.09em; color:var(--ink3); font-weight:650}
+.dropdown small{display:block; color:var(--ink3); font-size:11px; margin-top:1px}
+#stat{color:var(--ink2); font-size:12px}
+
+/* Where this patch stands relative to patches/patches.js. Quiet, because it's
+   reassurance rather than an alert, but present — without it "Revert to file"
+   is a menu item for a state you can't see you're in. Empty for a patch that
+   only exists in this browser, since there's nothing to say about it. */
+#pstate{
+  font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; font-weight:650;
+  padding:2px 7px; border-radius:20px; flex:none; cursor:default;
+}
+#pstate:empty{display:none}
+#pstate.file{background:var(--surface2); color:var(--ink3); border:1px solid var(--line)}
+#pstate.edited{background:var(--accent-soft); color:var(--accent); border:1px solid transparent}
+
+#cols{display:flex; flex:1; min-height:0}
+#left{
+  width:400px; flex:none; display:flex; flex-direction:column; min-height:0;
+  background:var(--surface);
+}
+#right{
+  flex:1; min-width:0; position:relative; overflow:auto;
+  background:var(--mat); display:flex; flex-direction:column;
+}
+
+/* Drag handles. Thin, invisible until you need them. */
+#hsplit{
+  width:5px; flex:none; cursor:col-resize; background:var(--line);
+  transition:background .12s;
+}
+#hsplit:hover,#hsplit.dragging{background:var(--accent)}
+#vsplit{
+  height:5px; flex:none; cursor:row-resize; background:var(--line);
+  transition:background .12s;
+}
+#vsplit:hover,#vsplit.dragging{background:var(--accent)}
+
+h2{
+  font-size:10.5px; text-transform:uppercase; letter-spacing:.1em; color:var(--ink3);
+  margin:0; font-weight:650; padding:10px 14px 6px;
+  display:flex; align-items:center; gap:8px;
+}
+h2 .spacer{flex:1}
+/* Pane controls. Icons are fine here where a text label would crowd the header,
+   but every one carries a tooltip and they use the conventional expand/collapse
+   arrows rather than something invented. */
+.panebtn{
+  padding:2px 5px; line-height:0; color:var(--ink3); border-color:transparent;
+  background:none; box-shadow:none;
+}
+.panebtn:hover{color:var(--ink); background:var(--surface2); border-color:var(--line)}
+.panebtn svg{display:block}
+#srcwrap{flex:1 1 auto; display:flex; flex-direction:column; min-height:60px; position:relative}
+#src{
+  flex:1; width:100%; border:none; border-radius:0; resize:none; padding:6px 14px 14px;
+  font-family:var(--mono); font-size:12.5px; line-height:1.7;
+  background:var(--surface); color:var(--ink);
+}
+#src:focus{box-shadow:none}
+#src::placeholder{color:var(--ink3)}
+#ac{
+  position:absolute; z-index:20; background:var(--surface); border:1px solid var(--accent);
+  border-radius:6px; max-height:210px; overflow:auto; display:none; min-width:240px;
+  box-shadow:0 8px 24px var(--shadow);
+}
+#ac div{padding:3px 10px; cursor:pointer; font-family:var(--mono); font-size:12px}
+#ac div.sel{background:var(--accent); color:#fff}
+#ac div small{color:var(--ink3); margin-left:8px; font-family:var(--sans)}
+#ac div.sel small{color:var(--accent-soft)}
+
+#msgs{flex:0 0 auto; overflow:auto; background:var(--paper); min-height:0}
+#notewrap{flex:0 0 auto; border-top:1px solid var(--line); padding:6px 10px 8px;
+  background:var(--surface)}
+#notewrap label{display:flex; align-items:baseline; gap:8px; font-size:10px;
+  text-transform:uppercase; letter-spacing:.09em; color:var(--ink3); font-weight:600;
+  margin-bottom:4px}
+#notehint{text-transform:none; letter-spacing:0; font-weight:400; font-size:11px;
+  color:var(--ink3)}
+#notes{width:100%; resize:vertical; min-height:34px; font:12.5px/1.5 var(--sans)}
+.msg{margin:7px 12px; padding:7px 10px; border-radius:5px; font-size:12px; line-height:1.5}
+.msg.err{background:var(--err-bg); border:1px solid var(--line2); color:var(--err-ink)}
+.msg.warn{background:var(--warn-bg); border:1px solid var(--line2); color:var(--warn-ink)}
+.msg.ok{background:var(--ok-bg); border:1px solid var(--line2); color:var(--ok-ink)}
+.msg b{color:inherit; font-weight:650}
+.msg .ln{font-family:var(--mono); color:var(--ink3); margin-right:6px}
+.msg.goto{cursor:pointer}
+.msg.goto:hover{filter:brightness(.97)}
+.msg.goto:hover .ln{color:var(--ink); text-decoration:underline}
+
+#zoombar{
+  flex:none; display:flex; align-items:center; gap:6px; padding:7px 12px;
+  background:var(--mat); border-bottom:1px solid var(--line2);
+  position:sticky; top:0; z-index:5;
+}
+#zoombar button{padding:2px 8px; font-size:12px}
+#zoombar select{padding:2px 6px; font-size:12px}
+#zoombar .vrule{margin:0 2px}
+#zoomlvl{color:var(--ink2); font-size:12px; min-width:44px; text-align:center;
+  font-variant-numeric:tabular-nums}
+#canvaswrap{padding:22px; flex:1}
+svg#diagram{
+  background:var(--sheet); display:block; border:1px solid var(--line2);
+  box-shadow:0 1px 2px var(--shadow-soft), 0 6px 18px var(--shadow-soft);
+  transform-origin:top left;
+}
+svg#diagram .box{cursor:grab}
+svg#diagram .box.dragging{cursor:grabbing}
+/* Selection is drawn in CSS, not as SVG attributes, so it can't end up in an
+   exported file. The SVG export carries no stylesheet and the PNG goes through
+   an <img>, so both come out unmarked without anything having to remember. */
+svg#diagram .box.sel > rect:first-child{ stroke:var(--accent); stroke-width:2.4 }
+svg#diagram #band{ fill:var(--accent); fill-opacity:.08;
+  stroke:var(--accent); stroke-width:1; stroke-dasharray:4 3 }
+
+#veil{
+  position:fixed; inset:0; background:rgba(0,0,0,.5); display:none;
+  align-items:center; justify-content:center; z-index:50; padding:24px;
+}
+#veil.on{display:flex}
+.sheet{
+  background:var(--surface); border:1px solid var(--line2); border-radius:8px;
+  max-width:860px; width:100%; max-height:88vh; overflow:auto; padding:18px 20px;
+  box-shadow:0 18px 50px var(--shadow);
+}
+.sheet h3{margin:0 0 10px; font-size:15px; font-weight:650}
+.sheet textarea{width:100%; height:300px; font-family:var(--mono);
+  font-size:11.5px; line-height:1.55}
+.sheet pre{background:var(--paper); border:1px solid var(--line); border-radius:5px;
+  padding:10px 12px; overflow:auto; margin:9px 0; font-size:11.5px; line-height:1.55}
+.row{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:12px}
+.keys{display:grid; grid-template-columns:auto 1fr; gap:7px 14px; align-items:center;
+  font-size:12px; color:var(--ink2)}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <img src="img/icon.svg" alt="" width="20" height="20" id="brandmark">
+  <h1>Patching</h1>
+  <nav id="nav">
+    <a href="index.html" class="active">Patch</a>
+    <a href="modules.html">Modules</a>
+    <a href="score.html">Score</a>
+  </nav>
+  <div class="vrule"></div>
+
+  <!-- File first, then the document it acts on. A menu is a landmark and should
+       sit in the same place whatever is open; the patch name is content and
+       varies in width, so anchoring commands to the right of it would make them
+       move. Same order as Figma, Docs and every menu bar. -->
+  <div class="menu left">
+    <button data-open>File</button>
+    <div class="dropdown">
+      <button id="bnew">New patch</button>
+      <button id="bdup">Duplicate</button>
+      <div id="exmenu"></div>
+      <hr>
+      <button id="bimport">Import…<small>patches.js, patch JSON or PatchBook</small></button>
+      <button id="ball">Export all patches<small>Save as patches/patches.js</small></button>
+      <hr>
+      <button id="brevert">Revert to file<small>Discard your changes to this one</small></button>
+      <button id="bdel" class="danger">Delete patch</button>
+    </div>
+  </div>
+
+  <select id="plist" title="Saved patches"></select>
+  <input type="text" id="pname" placeholder="Untitled patch">
+  <span id="pstate" aria-live="polite"></span>
+
+  <div class="spacer"></div>
+
+  <span id="stat"></span>
+  <div class="vrule"></div>
+
+  <!-- Getting one patch out to someone, or to another tool. A different job
+       from keeping your own work, which is why it's a different menu. -->
+  <div class="menu">
+    <button data-open>Share</button>
+    <div class="dropdown">
+      <button id="bsvgm">Diagram as SVG<small>Scales cleanly. For print</small></button>
+      <button id="bpng">Diagram as PNG<small>For forums and social, which reject SVG</small></button>
+      <button id="bjson">This patch as JSON<small>Cables, layout and notes</small></button>
+      <button id="bpb">PatchBook markup<small>For other tools</small></button>
+    </div>
+  </div>
+  <button id="bsvg" class="primary">Export SVG</button>
+  <button id="btheme" title="Light or dark" aria-label="Light or dark">◐</button>
+  <div class="menu">
+    <button data-open>Help</button>
+    <div class="dropdown">
+      <button id="bhelp">Patch syntax<small>Cables, voices, parameters</small></button>
+      <button id="babout">About Patching</button>
+    </div>
+  </div>
+</div>
+
+<div id="cols">
+  <div id="left">
+    <h2>Patch source<span class="spacer"></span>
+      <button class="panebtn" id="focused" title="Expand the editor (Esc to restore)"></button>
+    </h2>
+    <div id="srcwrap">
+      <textarea id="src" spellcheck="false" placeholder="vco:saw -> vcf:in
+vcf:lp -> vca:in [audio]
+vca:out -> delay:in &quot;a note on the cable&quot;"></textarea>
+      <div id="ac"></div>
+    </div>
+    <div id="notewrap">
+      <label for="notes">Notes<span id="notehint">shown under the diagram</span></label>
+      <textarea id="notes" rows="2" spellcheck="true"
+        placeholder="What this patch is for, how it behaves, what to try next."></textarea>
+    </div>
+    <div id="vsplit" title="Drag to resize"></div>
+    <div id="msgs"></div>
+  </div>
+  <div id="hsplit" title="Drag to resize"></div>
+  <div id="right">
+    <!-- Everything here changes what the diagram looks like, and nothing here
+         changes the patch. Auto layout and the section filter belong with the
+         zoom controls for that reason, not in a menu about the document. -->
+    <div id="zoombar">
+      <button id="zout" title="Zoom out">&minus;</button>
+      <span id="zoomlvl">100%</span>
+      <button id="zin" title="Zoom in">+</button>
+      <button id="zfit">Fit width</button>
+      <button id="z100">100%</button>
+      <div class="vrule"></div>
+      <button id="btidy" title="Arrange the boxes by signal flow">Auto layout</button>
+      <select id="vfilter" title="Fade everything outside one section" style="display:none"></select>
+      <div style="flex:1"></div>
+      <button class="panebtn" id="focusc" title="Expand the diagram (Esc to restore)"></button>
+    </div>
+    <div id="canvaswrap"><svg id="diagram"></svg></div>
+  </div>
+</div>
+
+<div id="veil"><div class="sheet" id="sheet"></div></div>
+
+<input type="file" id="file" accept=".json,.js,.txt" style="display:none">
+
+<!-- Plain script tags. No build step, nothing to serve. -->
+<script src="lib/generics.js"></script>
+<script src="lib/starter.js"></script>
+<script src="lib/library.js" onerror="void 0"></script>
+<script src="examples/examples.js" onerror="window.PATCH_EXAMPLES=null"></script>
+<script src="patches/patches.js" onerror="void 0"></script>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================================
+   Patch documenter — flow view.
+
+   A signal flow diagram, not a picture of the rack: boxes in signal order,
+   only the jacks actually in use, cable type carried by BOTH colour and line
+   style so it survives greyscale printing and colour vision deficiency.
+
+   Source of truth for cables is the text pane on the left. Box positions are
+   NOT in the text — they live in the patch object and are updated by dragging,
+   so re-typing a cable never disturbs your layout.
+   ========================================================================== */
+
+/* Separate files, separate scopes, so this is duplicated in modules.html.
+   Two lines is cheaper than a shared script tag for one string. */
+var REPO = "https://github.com/ubertv/patching";
+/* Bump in all three pages together. Shown in About, so a screenshot says which
+   copy someone is running. CHANGELOG.md is what the number means. */
+var VERSION = "0.1.0";
+
+/* ---------------------------------------------------------------- libraries --- */
+/*
+   Every module comes from a LIBRARY. A library is a plain object pushed onto
+   window.MODULE_LIBRARIES by a <script> in lib/, so adding one is dropping a
+   file in and adding a tag. No build step, no bundler, no manifest.
+
+   Load order is precedence order, last wins, and anything you create or edit in
+   modules.html lives in localStorage and beats all of them. That's what makes
+   the app useful to someone who doesn't own the same gear: replace the library,
+   keep the tool.
+*/
+var LIBS = window.MODULE_LIBRARIES || [];
+
+var LSKEY      = "patching-patches-v1";
+var LS_MODULES = "patching-modules-v1";
+/* Superseded, read once as a fallback. See modules.html. */
+var LS_CUSTOM  = "patching-custom-modules-v1";
+var LS_PALETTE = "patching-palette-v1";
+var LS_EDITS   = "patching-library-edits-v1";
+
+/* Firefox throws on localStorage for file:// pages rather than returning null,
+   so every read is wrapped. The app is fully usable without storage — it just
+   can't remember patches between sessions, and says so. */
+function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+var STORAGE_OK = (function(){
+  try { localStorage.setItem("patching-probe","1"); localStorage.removeItem("patching-probe"); return true; }
+  catch(e){ return false; }
+})();
+
+/* Everything modules.html has changed, in one map keyed by id: modules you
+   made, corrections to shipped ones, and which are switched off. A module you
+   invented is simply an override with nothing underneath it. Same model the
+   patches use. */
+var OVER = (function(){
+  var v = null;
+  try { v = JSON.parse(lsGet(LS_MODULES)); } catch(e){}
+  if (v) return v;
+  /* Nothing under the new key means an older browser state, or none at all.
+     Fold the three old keys the same way modules.html does. */
+  var out = {};
+  try { var e = JSON.parse(lsGet(LS_EDITS)) || {}; for (var id in e) out[id] = e[id]; } catch(e){}
+  try { (JSON.parse(lsGet(LS_CUSTOM)) || []).forEach(function(m){ if (m && m.id) out[m.id] = m; }); } catch(e){}
+  try {
+    var p = JSON.parse(lsGet(LS_PALETTE));
+    ((p && p.hidden) || []).forEach(function(id){
+      if (!out[id]) out[id] = { id:id };
+      out[id].off = true;
+    });
+  } catch(e){}
+  return out;
+})();
+
+var MODMAP = {}, MODS = [];
+function addModule(m, libId, libName){
+  var c = {};
+  for (var k in m) c[k] = m[k];
+  c.lib = libId; c.libName = libName;
+  if (MODMAP[c.id]) MODS.splice(MODS.indexOf(MODMAP[c.id]), 1);
+  MODMAP[c.id] = c; MODS.push(c);
+}
+/* MERGED, not replaced: an override is a set of differences and may hold only
+   one of them. Switching a module off writes `{id, off:true}` and nothing else,
+   so replacing would leave a husk with no name and no jacks. */
+LIBS.forEach(function(L){ (L.modules||[]).forEach(function(m){
+  var o = OVER[m.id], merged = m;
+  if (o){ merged = {}; for (var k in m) merged[k] = m[k]; for (k in o) merged[k] = o[k]; }
+  addModule(merged, L.id, L.name);
+  if (o) MODMAP[m.id].edited = true;
+}); });
+/* Overrides with no file underneath are modules you made. */
+Object.keys(OVER).forEach(function(id){
+  if (!MODMAP[id]) addModule(OVER[id], "yours", "Yours");
+});
+
+/* Which modules the autocomplete offers. Hiding is COSMETIC: a hidden module
+   still parses, still validates and still draws, so trimming the list can never
+   break a patch that already references one.
+
+   `off` rides on the override, so an exported lib/library.js carries it and a
+   fresh browser gets the same list. An older file with a separate
+   MODULE_PALETTE still works, but only when storage has nothing to say. */
+var HIDDEN = {};
+(function(){
+  var any = false;
+  Object.keys(OVER).forEach(function(id){ if (OVER[id] && OVER[id].off){ HIDDEN[id] = 1; any = true; } });
+  if (any) return;
+  ((window.MODULE_PALETTE && window.MODULE_PALETTE.hidden) || [])
+    .forEach(function(id){ HIDDEN[id] = 1; });
+})();
+
+/* Kept so the rest of the file reads the same as before the split. */
+var M = MODS;
+var CLASH = [];
+
+function jacksFor(id){ var m = MODMAP[id]; return m ? (m.jacks || []) : null; }
+function noJacks(id){ var m = MODMAP[id]; return !!(m && m.noJacks); }
+function byId(id){ return MODMAP[id] || null; }
+function allModules(){ return MODS; }
+function jack(mid, jid){
+  var js = jacksFor(mid); if (!js) return null;
+  for (var i=0;i<js.length;i++) if (js[i].id===jid) return js[i];
+  return null;
+}
+
+/* Colour AND line style. The dash patterns are as distinguishable from each
+   other in black and white as the colours are in colour — that's the whole
+   point, these get printed. */
+/* Cable colours in both themes. `c` is the live one, set by applyTheme().
+   The light set is chosen for print on white; the dark set is lifted so it
+   still separates against a dark sheet without glowing. Line style carries the
+   type as well, so either set survives greyscale. */
+/* ------------------------------------------------------------------ theme ---
+   Stored per browser, shared by all three pages, and set on <html> before the
+   first paint by a tiny inline script in <head> so the page never flashes the
+   wrong one. No stored choice means follow the operating system.
+
+   The DIAGRAM follows the theme too, but every export forces light: an SVG
+   pasted into a forum or sent to a printer has to be dark-on-white whatever the
+   interface happened to be set to. */
+var LS_THEME = "patching-theme-v1";
+function prefersDark(){
+  return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+}
+function applyTheme(t){
+  THEME = t; TH = THEMES[t] || THEMES.light;
+  for (var k in SIG) SIG[k].c = (t === "dark") ? SIG[k].dc : SIG[k].lc;
+  document.documentElement.setAttribute("data-theme", t);
+}
+
+var SIG = {
+  audio: { lc:"#b5322c", dc:"#e8736c", d:"",            n:"audio" },
+  pitch: { lc:"#2f5fd0", dc:"#7ba4ff", d:"14 6",        n:"pitch CV" },
+  cv:    { lc:"#158f7d", dc:"#4fc4ac", d:"2 5",         n:"modulation CV" },
+  gate:  { lc:"#7b3fbf", dc:"#b48ae8", d:"6 4",         n:"gate / trigger" },
+  clock: { lc:"#a8760a", dc:"#d9a63f", d:"12 4 2 4",    n:"clock" },
+  multi: { lc:"#5f6873", dc:"#98a1ad", d:"9 3 1 3 1 3", n:"undeclared" }
+};
+
+/* Everything else the renderer puts on the sheet. */
+var THEMES = {
+  light: { sheet:"#ffffff", ink:"#111", ink2:"#555", ink3:"#777", faint:"#888",
+           rule:"#222", hair:"#ccc", hair2:"#ddd", knock:"#ffffff",
+           gen:"#444", genfill:"#f5f5f2", nofill:"#eceef1", role:"#4a4a4a",
+           bad:"#e0605e", head:"#f3f3f1" },
+  dark:  { sheet:"#1a1c1f", ink:"#e9e7e2", ink2:"#a8a39b", ink3:"#8b867e", faint:"#7e7970",
+           rule:"#5a6068", hair:"#3b4046", hair2:"#31363b", knock:"#1a1c1f",
+           gen:"#9a958d", genfill:"#212427", nofill:"#242830", role:"#c9c5be",
+           bad:"#e2726b", head:"#212326" }
+};
+var THEME = "light", TH = THEMES.light;
+var SIGORDER = ["audio","pitch","cv","gate","clock","multi"];
+
+/* Module categories, and the wash of colour each one puts behind a box title.
+
+   Same list as modules.html groups by, deliberately — one vocabulary for "what
+   kind of thing is this", whether you're browsing the library or reading a
+   diagram.
+
+   These are a SCANNING AID, not a code to decode. They help you find the
+   oscillators at a glance in a patch of twenty boxes; they never carry
+   information the diagram doesn't already state in words, because the module's
+   own name says what it is. That's why there's no legend for them, and why
+   they're this pale: every tint sits at roughly 94% lightness, so it prints as
+   near-white and can't muddy the cable colours, which ARE load-bearing.
+
+   Three of them echo the cable colour of the signal they deal in — sources
+   warm like audio, modulation teal like CV, timing amber like clock — because
+   where the meanings line up, agreeing is better than being arbitrary.
+
+   To turn the whole thing off, return null from catFill(). */
+var CATS = [
+  ["Sound sources",       ["oscillator","drum","noise","granular","sampler","voice"], "#f9e9e6", "#33262a"],
+  ["Filters & shaping",   ["filter","wavefolder"],                                    "#f6e9f3", "#31263a"],
+  ["Modulation",          ["lfo","envelope","random","modulation"],                   "#e4f1ec", "#1d3230"],
+  ["Sequencing & timing", ["sequencer","clock","quantizer","controller"],             "#fdf1dd", "#332c1c"],
+  ["Mixing & VCAs",       ["vca","mixer"],                                            "#e7eff9", "#1f2b3c"],
+  ["Effects",             ["delay","reverb","effect"],                                "#efeafa", "#282540"],
+  ["Utilities",           ["utility","passive","expander","midi","power"],            "#eeeff0", "#26292d"],
+  ["Output",              ["output"],                                                 "#e9f2e2", "#233020"]
+];
+var CATOTHER = ["#f3f3f1", "#212326"];
+
+/* THE FIRST TAG WINS, not the first category.
+
+   Modules do several things and their tags say so, but a box gets one colour.
+   Walking the tags in order and taking the first that maps anywhere makes tag
+   order the module's own statement of what it mainly is — so Clouds tagged
+   ["effect","granular"] reads as an effect while arbhar tagged ["granular",…]
+   reads as a sound source, without either of them needing a special case.
+
+   Walking the categories instead, as this used to, meant the CATS order decided
+   for every module at once: Pam's landed in Modulation rather than Sequencing
+   because Modulation happens to be listed first, and no amount of tagging could
+   fix it. */
+function catOf(m){
+  var t = ((m && m.tags) || []).map(function(x){ return String(x).toLowerCase(); });
+  for (var k = 0; k < t.length; k++)
+    for (var i = 0; i < CATS.length; i++)
+      if (CATS[i][1].indexOf(t[k]) !== -1) return CATS[i];
+  return null;
+}
+function catFill(m){
+  var i = THEME === "dark" ? 3 : 2, c = catOf(m);
+  return c ? c[i] : CATOTHER[THEME === "dark" ? 1 : 0];
+}
+
+/* -------------------------------------------------------------- patch state --- */
+
+/*
+   Patches are kept exactly the way modules are, and for the same reasons.
+
+     patches/patches.js   the durable copy. A plain <script src>, so it loads
+                          identically off a filesystem, off localhost and off a
+                          web host. Picked up automatically at boot.
+     browser storage      the working copy. Instant, but one browser, one machine.
+     Export / Import      the bridge between the two.
+
+   A patch that exists in both places is ONE patch, matched by id, and the
+   stored copy wins. That's what makes the round trip safe: export your work,
+   drop the file in, and nothing duplicates — the file becomes the baseline
+   underneath the copy you already had.
+
+   The override is also self-cancelling. save() writes to storage only while
+   the patch actually differs from the file, so merely opening a patch from a
+   file doesn't shadow it, and editing one back to matching drops the override
+   on its own. Pull a newer patches.js and you get the newer version of
+   everything you haven't touched.
+*/
+var PATCH_FILES = window.PATCH_FILES || [];
+var FILEP = {};          /* id -> the file's copy, never mutated */
+var FILEORDER = [];      /* file ids, in the order the files declare them */
+PATCH_FILES.forEach(function(F){
+  (F.patches || []).forEach(function(p){
+    if (!p || !p.id) return;
+    if (!FILEP[p.id]) FILEORDER.push(p.id);
+    FILEP[p.id] = p;     /* a later file wins, same as libraries */
+  });
+});
+
+var parsed = { cables: [], errors: [], params: {}, voices: [] };
+var pendingLayout = false;   /* set by the Auto layout command, consumed by build() */
+var view = { nodes: [], edges: [], w: 0, h: 0 };
+var state = { voice: "" };   /* section filter. Fades what is outside it, never removes it */
+
+/* Date.now() alone collides if two patches are made in the same millisecond,
+   which "import a file of twenty" does every time. */
+var idSeq = 0;
+function newPatch(){
+  return { id: "p" + Date.now().toString(36) + (idSeq++ ? "-" + idSeq : ""),
+           name: "Untitled patch", src: "", pos: {}, notes: "" };
+}
+function clonePatch(p){
+  return { id: p.id, name: p.name || "Untitled patch", src: p.src || "",
+           pos: JSON.parse(JSON.stringify(p.pos || {})), notes: p.notes || "" };
+}
+
+/* Every patch the app knows about, file ones first, then storage-only ones in
+   the order they were made. Storage shadows the file entry rather than sitting
+   beside it. */
+function patchIds(){
+  var seen = {}, out = [];
+  FILEORDER.forEach(function(id){ seen[id] = 1; out.push(id); });
+  Object.keys(store.patches).forEach(function(id){ if (!seen[id]) out.push(id); });
+  return out;
+}
+function allPatches(){ return patchIds().map(getPatch); }
+function getPatch(id){
+  if (store.patches[id]) return store.patches[id];
+  if (FILEP[id]) return clonePatch(FILEP[id]);
+  return null;
+}
+function fromFile(id){ return !!FILEP[id]; }
+function isEdited(id){ return !!(FILEP[id] && store.patches[id]); }
+
+/* What counts as "the same patch". Positions are compared with sorted keys and
+   rounded values, because dragging a box a subpixel shouldn't register as an
+   edit and object key order isn't something to depend on. */
+function canon(p){
+  var pos = p.pos || {}, o = {};
+  Object.keys(pos).sort().forEach(function(k){
+    o[k] = [Math.round(pos[k].x || 0), Math.round(pos[k].y || 0)];
+  });
+  return JSON.stringify([p.name || "", p.src || "", p.notes || "", o]);
+}
+
+/* First run with no file and no storage still has to produce a patch to type
+   into, and that one is registered straight away so the list is never empty. */
+function currentPatch(){
+  var p = getPatch(store.current);
+  if (p) return p;
+  var ids = patchIds();
+  if (ids.length) return getPatch(ids[0]);
+  var np = newPatch(); store.patches[np.id] = np; return np;
+}
+
+function save(){
+  if (FILEP[patch.id] && canon(patch) === canon(FILEP[patch.id]))
+    delete store.patches[patch.id];        /* identical to the file: no override needed */
+  else
+    store.patches[patch.id] = patch;
+  store.current = patch.id;
+  try { localStorage.setItem(LSKEY, JSON.stringify(store)); }
+  catch(e){ msg("err", "Couldn't save. Storage is full, or this is a private window."); }
+}
+
+/* Switching to a patch is always these five lines, and getting one of them
+   wrong is how notes went missing on import. */
+function showPatch(p){
+  patch = p; store.current = p.id;
+  document.getElementById("src").value = p.src || "";
+  document.getElementById("pname").value = p.name || "";
+  document.getElementById("notes").value = p.notes || "";
+}
+
+function loadStore(){
+  try {
+    var s = JSON.parse(lsGet(LSKEY) || "null");
+    if (s && s.patches) return s;
+  } catch(e){}
+  return { patches:{}, current:null };
+}
+
+var store = loadStore();
+var patch = currentPatch();
+
+/* ------------------------------------------------------------------ parsing --- */
+/*
+   One cable per line:
+
+     module:jack -> module:jack
+     module:jack -> module:jack [audio]
+     module:jack -> module:jack [gate] "note text"
+     # comments and blank lines are ignored
+
+   The [sig] tag is optional, and REQUIRED only when an endpoint is a `multi`
+   jack — because that's exactly the case where the jack can't tell you what
+   the cable is carrying.
+*/
+/* Typed arrows, borrowed from PatchBook so a patch reads the same either way.
+   NOTE THE ONE DELIBERATE DIFFERENCE: in PatchBook `->` means audio. Here it
+   stays neutral — the source jack decides — because that behaviour predates this
+   and because a neutral connector is genuinely useful when you don't want to
+   assert a type. The PatchBook importer translates their `->` to an explicit
+   [audio] tag so nothing is lost in translation. */
+var ARROWS = {
+  ">>": "cv", "p>": "pitch", "g>": "gate", "t>": "gate", "c>": "clock",
+  "->": null, "→": null, ">": null
+};
+
+function parse(text){
+  var out = { cables: [], errors: [], params: {}, voices: [] };
+  var voice = "", lastParamMod = null;
+
+  text.split(/\n/).forEach(function(raw, i){
+    var ln = i + 1;
+    /* Comments: # or // at line start or after whitespace. A # tight against the
+       preceding character is the instance marker — vco#2 — so it must survive. */
+    var line = raw.replace(/(^|\s)(#|\/\/).*$/, "").trim();
+    if (!line) return;
+
+    /* Voice header: a bare NAME: with no arrow and no leading marker. */
+    if (/^[^*|\-].*:$/.test(line) && !/(->|>>|→|[pgtc]>)/.test(line)){
+      voice = line.slice(0, -1).trim();
+      if (voice && out.voices.indexOf(voice) === -1) out.voices.push(voice);
+      lastParamMod = null;
+      return;
+    }
+
+    /* Parameters: "* module: knob = 40% | knob = 3" or a bare "* module:"
+       followed by "| knob = value" continuation lines. */
+    var pm = line.match(/^\*\s*([^:]+):\s*(.*)$/);
+    if (pm){
+      var pmod = pm[1].trim();
+      /* Parameter blocks accept a display name too, so "* Ripples:" and
+         "* vcf:" both land on the same box. */
+      if (!byId(pmod.replace(/#[a-z0-9\-]+$/i, ""))){
+        var lower = pmod.toLowerCase();
+        var byName = allModules().filter(function(x){
+          return x.name.toLowerCase() === lower; })[0];
+        if (byName) pmod = byName.id;
+        else {
+          /* "VCO 2" is how PatchBook writes a second instance, and connections
+             already accept it. Parameters have to as well, or `- VCO 2 (SAW) ...`
+             and `* VCO 2:` would disagree about which box they mean. */
+          var im = lower.match(/^(.*?)\s+(\d+)$/);
+          if (im){
+            var base = allModules().filter(function(x){
+              return x.name.toLowerCase() === im[1] || x.id === im[1]; })[0];
+            if (base) pmod = base.id + "#" + im[2];
+          }
+        }
+      }
+      lastParamMod = pmod;
+      if (!byId(pmod.replace(/#[a-z0-9\-]+$/i, "")))
+        out.errors.push({ line:ln, text:raw, msg:"Parameters for unknown module <b>"+esc(pmod)+"</b>. "+
+          near(pmod.toLowerCase(), allModules().map(function(x){ return x.id; })) });
+      if (pm[2]) addParams(out, pmod, pm[2], ln);
+      return;
+    }
+    if (/^\|/.test(line)){
+      if (!lastParamMod){
+        out.errors.push({ line:ln, text:raw, msg:"Parameter line with no module above it. Start the block with <span class='mono'>* module:</span>." });
+        return;
+      }
+      addParams(out, lastParamMod, line.replace(/^\|\s*/, ""), ln);
+      return;
+    }
+
+    /* Connection. Leading "- " is accepted so PatchBook lines paste in cleanly. */
+    line = line.replace(/^-\s+/, "");
+    var note = "";
+    line = line.replace(/"([^"]*)"\s*$/, function(_, n){ note = n; return ""; }).trim();
+    var sig = null;
+    line = line.replace(/\[\s*([a-z]+)\s*\]\s*$/i, function(_, s){ sig = s.toLowerCase(); return ""; }).trim();
+
+    /* `to` is a plain-English spelling of `->`, for when a patch is being
+       dictated or typed by someone who doesn't want to reach for symbols.
+       Identical meaning: neutral, the source jack decides the type.
+
+       Two guards. It only applies when the line has no symbol arrow, so a
+       module actually called "Back To Basics" is never mistaken for a
+       connection. And it needs whitespace both sides, so ids that merely
+       contain the letters — photo, auto-pan, in-to-out — are untouched.
+       Rewriting to `->` here means everything downstream, including export,
+       sees one canonical form. */
+    if (!/(->|>>|[pgtc]>|→|>)/.test(line))
+      line = line.replace(/\s+to\s+/gi, " -> ");
+
+    /* Split into endpoints and the arrows between them, so one line can be a
+       chain: A -> B -> C is two cables, and B is a destination on the first and
+       a source on the second. Each hop keeps its own arrow, so you can change
+       type mid-chain: seq:cv p> vco -> vcf. */
+    var parts = line.split(/\s*(->|>>|[pgtc]>|→|>)\s*/);
+    if (parts.length < 3){
+      out.errors.push({ line:ln, text:raw, msg:"Can't read this as a connection. Expected <span class='mono'>module:jack -&gt; module:jack</span>." });
+      return;
+    }
+    if (sig && !SIG[sig]){
+      out.errors.push({ line:ln, text:raw, msg:"Unknown signal type <b>"+esc(sig)+"</b>. Use one of "+SIGORDER.join(", ")+"." });
+      sig = null;
+    }
+
+    /* One output feeding several inputs, written the way you'd say it:
+         env:out >> vca:cv and vcf:cutoff
+       Only allowed on the LAST hop. "a -> b and c -> d" has two readings and
+       neither is obviously right, so we refuse it rather than pick. */
+    var hops = [];
+    for (var h = 1; h < parts.length; h += 2)
+      hops.push({ arrow: parts[h], src: parts[h-1], dst: parts[h+1] });
+
+    var bad = false;
+    hops.forEach(function(hop, i){
+      if (i < hops.length - 1 && /\s+and\s+|,/.test(hop.dst)){
+        out.errors.push({ line:ln, text:raw, msg:"<span class='mono'>and</span> only works on the "+
+          "last step of a line. Split the chain across two lines." });
+        bad = true;
+      }
+    });
+    if (bad) return;
+
+    /* A chain's middle endpoint is written once but plays two parts, and they
+       are DIFFERENT JACKS: it arrives at an input and leaves by an output.
+
+       Three ways to say which output it leaves by, in increasing explicitness:
+
+         delay:in -> …     the default output, if the module has an obvious one
+         delay     -> …    both ends defaulted
+         delay:in:mix      say both: arrive at IN, leave by MIX
+
+       The three-part form is what makes a chain usable on anything with more
+       than one output — a delay with DRY and WET, a filter with LP, BP and HP.
+       Without it those modules could only ever appear at the end of a line.
+
+       It's meaningless anywhere but the middle, so saying it on the first or
+       last endpoint is an error rather than something quietly ignored. */
+    function split3(text){
+      var m = String(text).trim().match(
+        /^([a-z0-9\-]+(?:#[a-z0-9\-]+)?)\s*:\s*([a-z0-9\-]+)\s*:\s*([a-z0-9\-]+)$/i);
+      return m ? { mod:m[1], inJack:m[2], outJack:m[3] } : null;
+    }
+    var segs = [];
+    for (var g = 0; g < parts.length; g += 2) segs.push(parts[g]);
+
+    var misplaced = false;
+    segs.forEach(function(seg, i){
+      var t = split3(seg);
+      if (!t) return;
+      if (i === 0 || i === segs.length - 1){
+        out.errors.push({ line:ln, text:raw, msg:"<span class='mono'>"+esc(t.mod)+":"+esc(t.inJack)+
+          ":"+esc(t.outJack)+"</span> names an input and an output, which only makes sense for a "+
+          "module in the <i>middle</i> of a chain. "+(i === 0
+            ? "At the start it is only a source. Write <span class='mono'>"+esc(t.mod)+":"+esc(t.outJack)+"</span>."
+            : "At the end it is only a destination. Write <span class='mono'>"+esc(t.mod)+":"+esc(t.inJack)+"</span>.") });
+        misplaced = true;
+      }
+    });
+    if (misplaced) return;
+
+    hops.forEach(function(hop, i){
+      var srcSeg = segs[i], three = split3(srcSeg);
+      var srcText;
+      if (three) srcText = three.mod + ":" + three.outJack;
+      else if (i === 0) srcText = srcSeg;
+      else {
+        /* Carry the module, not the jack — the next hop leaves by a different
+           socket, so let the default-output rule pick it. */
+        var mm = String(srcSeg).match(/^\s*([a-z0-9\-]+(?:#[a-z0-9\-]+)?)\s*(?::|$|\()/i);
+        srcText = mm ? mm[1] : srcSeg;
+      }
+      var a = endpoint(srcText, ln, out, "out");
+
+      var dstSeg = segs[i+1], dthree = split3(dstSeg);
+      var dsts = (i === hops.length - 1)
+        ? String(dstSeg).split(/\s+and\s+|\s*,\s*/i).map(function(x){ return x.trim(); }).filter(Boolean)
+        : [dthree ? dthree.mod + ":" + dthree.inJack : dstSeg];
+
+      var arrowSig = ARROWS[hop.arrow];
+      dsts.forEach(function(dtext){
+        var b = endpoint(dtext, ln, out, "in");
+        if (!a || !b) return;
+        out.cables.push({ from:a, to:b, sig: sig || arrowSig, note:note, line:ln,
+                          voice: voice, arrow: hop.arrow });
+      });
+    });
+    lastParamMod = null;
+  });
+  return out;
+}
+
+function addParams(out, mod, str, ln){
+  str.split("|").forEach(function(chunk){
+    chunk = chunk.trim(); if (!chunk) return;
+    var eq = chunk.indexOf("=");
+    if (eq === -1){
+      out.errors.push({ line:ln, text:chunk, msg:"Parameter <span class='mono'>"+esc(chunk)+
+        "</span> needs a value: <span class='mono'>name = value</span>." });
+      return;
+    }
+    (out.params[mod] = out.params[mod] || []).push({
+      name: chunk.slice(0, eq).trim(), value: chunk.slice(eq+1).trim(), line: ln });
+  });
+}
+/* Which jack you meant when you didn't say.
+
+   Two rules, in order, and NEITHER of them is a guess:
+
+     1. a jack whose id is exactly `out`/`in` (or the first of a numbered or
+        stereo pair) — that's a naming convention already present in the data,
+        so we're reading it, not inventing it;
+     2. failing that, the only jack facing the right way — arithmetic.
+
+   Anything else returns null and the caller reports it with the candidates
+   listed. A VCO has saw, tri, sine, square and sub: picking one for you would
+   be exactly the sort of quiet guess this tool exists not to make.
+
+   It resolves for 39 of the 50 shipped modules on the output side and 28 on the
+   input side, which is enough to be worth having and not enough to rely on. */
+function defaultJack(mid, dir){
+  var js = jacksFor(mid); if (!js) return null;
+  var cands = js.filter(function(j){ return dir === "out" ? j.dir !== "in" : j.dir !== "out"; });
+  if (!cands.length) return null;
+  var conventional = cands.filter(function(j){
+    return j.id === dir || j.id === dir+"-1" || j.id === dir+"-l";
+  });
+  if (conventional.length === 1) return conventional[0].id;
+  if (cands.length === 1) return cands[0].id;
+  return null;
+}
+
+function endpoint(s, ln, out, dir){
+  s = s.trim();
+
+  /* A bare module name — no jack, no port label. Only legal if the default
+     resolves; otherwise say so and list what it could have been. */
+  if (/^[a-z0-9\-]+(?:#[a-z0-9\-]+)?$/i.test(s)){
+    var bm = s.match(/^([a-z0-9\-]+)(?:#([a-z0-9\-]+))?$/i);
+    if (byId(bm[1])){
+      var d = defaultJack(bm[1], dir);
+      if (d) s = bm[1] + (bm[2] ? "#"+bm[2] : "") + ":" + d;
+      else {
+        var js0 = jacksFor(bm[1]) || [];
+        var opts = js0.filter(function(j){ return dir === "out" ? j.dir !== "in" : j.dir !== "out"; })
+                      .map(function(j){ return j.id; });
+        out.errors.push({ line:ln, text:s, msg:"<b>"+esc(bm[1])+"</b> has "+
+          (opts.length ? "no obvious "+(dir==="out"?"output":"input")+". Say which: <span class='mono'>"+
+            esc(opts.join(", "))+"</span>"
+                       : "no "+(dir==="out"?"outputs":"inputs")+" at all.") });
+        return null;
+      }
+    }
+  }
+
+  /* PatchBook form: Module Name (Port Label). Accepted anywhere our own
+     module:jack form is, and mixed freely with it. This costs nothing in
+     validation — the label is resolved against the same jack data, scoped by
+     direction, which is why it lands on one answer nearly every time. */
+  var pb = s.match(/^(.+?)\s*\(\s*(.+)\s*\)$/);
+  if (pb){
+    var rep = { unmatched:[], unmatchedJacks:[], ambiguous:[], triggers:0, lines:0 };
+    var res = pbResolve(pb[1], pb[2], dir, rep);
+    if (res){
+      if (rep.ambiguous.length)
+        out.errors.push({ line:ln, text:s, msg:"<span class='mono'>"+esc(s)+
+          "</span> is ambiguous: "+esc(rep.ambiguous[0])+". Use the id form to say which." });
+      s = res;
+    } else if (rep.unmatched.length){
+      out.errors.push({ line:ln, text:s, msg:"No module named <b>"+esc(rep.unmatched[0])+"</b>. "+
+        near(rep.unmatched[0].toLowerCase(), allModules().map(function(x){ return x.name.toLowerCase(); })) });
+      return null;
+    } else {
+      out.errors.push({ line:ln, text:s, msg:"<b>"+esc(pb[1].trim())+"</b> has no "+
+        (dir==="out"?"output":"input")+" labelled <b>"+esc(pb[2].trim())+"</b>." });
+      return null;
+    }
+  }
+
+  var m = s.match(/^([a-z0-9\-]+)(?:#([a-z0-9\-]+))?\s*:\s*(.+)$/i);
+  if (!m){
+    out.errors.push({ line:ln, text:s, msg:"<span class='mono'>"+esc(s)+
+      "</span> isn't <span class='mono'>module:jack</span> or <span class='mono'>Module Name (Port Label)</span>." });
+    return null;
+  }
+  var mid = m[1], inst = m[2] || null, jid = m[3].trim();
+  if (!byId(mid)){
+    out.errors.push({ line:ln, text:s, msg:"No module <b>"+esc(mid)+"</b>. "+
+      near(mid, allModules().map(function(x){return x.id;})) });
+    return null;
+  }
+  var js = jacksFor(mid);
+  if (!js){
+    out.errors.push({ line:ln, text:s, msg:"<b>"+esc(mid)+"</b> has no jack data yet. Build it in <span class='mono'>annotate-jacks.html</span> first." });
+    return null;
+  }
+  if (noJacks(mid)){
+    out.errors.push({ line:ln, text:s, msg:"<b>"+esc(mid)+"</b> is marked as having no patch jacks." });
+    return null;
+  }
+  if (!jack(mid, jid)){
+    out.errors.push({ line:ln, text:s, msg:"<b>"+esc(mid)+"</b> has no jack <b>"+esc(jid)+"</b>. "+near(jid, js.map(function(x){return x.id;})) });
+    return null;
+  }
+  return { mod:mid, inst:inst, jack:jid, key: mid + (inst?("#"+inst):"") };
+}
+/* Cheap edit-distance suggestion — enough to catch a typo, not trying to be clever. */
+function near(s, list){
+  var best = null, bd = 1e9;
+  list.forEach(function(c){
+    var d = lev(s, c);
+    if (d < bd){ bd = d; best = c; }
+  });
+  return (best && bd <= Math.max(2, Math.ceil(s.length/3)))
+    ? "Did you mean <span class='mono'>"+esc(best)+"</span>?" : "";
+}
+function lev(a,b){
+  var m=a.length,n=b.length,d=[],i,j;
+  for(i=0;i<=m;i++){d[i]=[i];}
+  for(j=0;j<=n;j++){d[0][j]=j;}
+  for(i=1;i<=m;i++) for(j=1;j<=n;j++)
+    d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+  return d[m][n];
+}
+
+/* --------------------------------------------------------------- signal type --- */
+/*
+   THE SOURCE DECIDES WHAT'S ON THE WIRE.
+
+   A clock output emits a clock whether it lands in a clock input, an envelope's
+   gate input or a filter's cutoff. The destination's expectation doesn't change
+   the signal, so a mismatch between the two ends is not a problem to report —
+   it's just ordinary patching. An LFO into V/OCT is vibrato. A gate into a CV
+   input is a stepped voltage. Audio into a CV input is audio-rate modulation.
+   None of that is worth a warning, and an earlier version of this file warned on
+   81% of every possible connection in the rack, which is the same as warning on
+   nothing.
+
+   So, in order:
+     1. an explicit [type] tag always wins
+     2. otherwise the source jack's type, if it has a concrete one
+     3. otherwise the destination's, since a type-agnostic output plugged into a
+        specific input is being used as that type
+     4. otherwise unknown, and resolveTypes() below tries to work it out from
+        what's flowing into the source module
+*/
+function cableSig(c){
+  if (c.sig) return c.sig;
+  var a = jack(c.from.mod, c.from.jack), b = jack(c.to.mod, c.to.jack);
+  var as = a ? a.sig : "multi", bs = b ? b.sig : "multi";
+  if (as !== "multi") return as;
+  if (bs !== "multi") return bs;
+  return null;
+}
+
+/* Multi-to-multi is the only genuinely undetermined case: a VCA output into a
+   mixer input tells you nothing on its own. But if we know what went INTO that
+   VCA, we know what's coming out. Propagate forward through type-agnostic
+   modules until nothing more resolves. This is what lets an audio chain of
+   VCA -> mixer -> output colour itself correctly without a single [type] tag. */
+function resolveTypes(edges){
+  var guessed = 0;
+  for (var pass = 0; pass < 8; pass++){
+    var changed = 0;
+    edges.forEach(function(e){
+      if (e.sig) return;
+      /* Follow the THROUGH-path only: cables arriving at a type-agnostic jack.
+         A cable into a jack that already declares a type is a control input, not
+         the signal passing through. Without this a VCA never resolves, because
+         it always has audio at IN and CV at CV, and "is the inbound type
+         unambiguous" is permanently no — which is the single most common
+         type-agnostic module in a modular system. */
+      var inbound = edges.filter(function(o){
+        if (o === e || o.to.key !== e.from.key || !o.sig) return false;
+        var dj = jack(o.to.mod, o.to.jack);
+        return dj && dj.sig === "multi";
+      });
+      var types = {};
+      inbound.forEach(function(o){ types[o.sig] = 1; });
+      var keys = Object.keys(types);
+      /* Only adopt when the answer is unambiguous. Two different signal types
+         arriving on the through-path means we'd be picking one at random. */
+      if (keys.length === 1){ e.sig = keys[0]; e.inferredSig = true; changed++; guessed++; }
+    });
+    if (!changed) break;
+  }
+  return guessed;
+}
+
+/* ------------------------------------------------------------ stereo pairing --- */
+/* "INPUT 1 L" / "INPUT 1 R" -> {base:"INPUT 1", side:"L"}. Only a standalone
+   L or R token counts, so LEVEL and CLR don't get mangled. */
+function stereo(label){
+  var m = String(label).match(/(^|[\s\(\[])([LR])($|[\s\)\]])/);
+  if (!m) return null;
+  var i = m.index + m[1].length;
+  return { side: m[2], base: (label.slice(0,i) + " " + label.slice(i+1)).replace(/\s+/g," ").trim() };
+}
+/* Two cables merge into one drawn edge when they run between the same two
+   modules and both ends are matching L/R partners. The patch still stores two
+   cables — this is purely how it's drawn. */
+function pairUp(cables){
+  var used = {}, edges = [];
+  cables.forEach(function(c, i){
+    if (used[i]) return;
+    var fs = stereo(jack(c.from.mod,c.from.jack).label),
+        ts = stereo(jack(c.to.mod,c.to.jack).label);
+    if (fs && ts && fs.side === ts.side){
+      for (var k=i+1;k<cables.length;k++){
+        if (used[k]) continue;
+        var o = cables[k];
+        if (o.from.key !== c.from.key || o.to.key !== c.to.key) continue;
+        var ofs = stereo(jack(o.from.mod,o.from.jack).label),
+            ots = stereo(jack(o.to.mod,o.to.jack).label);
+        if (!ofs || !ots) continue;
+        if (ofs.base === fs.base && ots.base === ts.base &&
+            ofs.side === ots.side && ofs.side !== fs.side){
+          used[i] = used[k] = 1;
+          edges.push({ cables:[c,o], stereo:true, from:c.from, to:c.to,
+                       base: fs.base, toBase: ts.base });
+          return;
+        }
+      }
+    }
+    used[i] = 1;
+    edges.push({ cables:[c], stereo:false, from:c.from, to:c.to });
+  });
+  return edges;
+}
+
+/* --------------------------------------------------------------- geometry ----- */
+
+var BOXW = 186, HEADH = 30, ROWH = 19, PADV = 9, GAPX = 96, GAPY = 40;
+/* How far the section filter fades what it is not showing. Faint enough to
+   recede, solid enough to still read the module name off it. */
+var DIM = 0.18;
+var NOTE_SIZE = 10.5, NOTE_LEAD = 14;
+var PARAMH = 13, PARAMPAD = 8;
+
+function build(){
+  patch.src = document.getElementById("src").value;
+  parsed = parse(patch.src);
+  paintVoices();
+  /* The section filter DIMS, it does not remove.
+     It used to filter the cable list, which dropped modules out of the graph
+     entirely and relaid the whole diagram, so picking a section looked like
+     modules vanishing at random. A module shared with another section
+     disappeared depending on which header its cable happened to sit under.
+     Everything is drawn every time now, so the layout never moves. */
+  var allCables = parsed.cables;
+
+  /* Nodes in first-seen order — that ordering is yours, it comes from the
+     order you typed the cables, which is usually signal order already. */
+  var nodes = {}, order = [];
+  parsed.cables.forEach(function(c){
+    [c.from, c.to].forEach(function(e){
+      if (!nodes[e.key]){
+        nodes[e.key] = { key:e.key, mod:e.mod, inst:e.inst, ins:[], outs:[] };
+        order.push(e.key);
+      }
+    });
+  });
+  parsed.cables.forEach(function(c){
+    addPort(nodes[c.from.key], c.from.jack, "outs");
+    addPort(nodes[c.to.key],   c.to.jack,   "ins");
+  });
+
+  /* Parameters attach to the module box. Keyed by whatever you wrote, so both
+     `* vco:` and `* vco#2:` work, and a module with no cables but with settings
+     worth recording still gets a box. */
+  Object.keys(parsed.params).forEach(function(k){
+    if (!nodes[k]){
+      var base = k.replace(/#[a-z0-9\-]+$/i, ""), inst = (k.match(/#([a-z0-9\-]+)$/i)||[])[1];
+      if (!byId(base)) return;
+      nodes[k] = { key:k, mod:base, inst: inst || null, ins:[], outs:[] };
+      order.push(k);
+    }
+    nodes[k].params = parsed.params[k];
+  });
+
+  /* Size first: the layout needs real box heights, and heights depend on how
+     many ports and parameters a module ended up with. */
+  var list = order.map(function(k){ return nodes[k]; });
+  assignVoices(list, parsed.cables);
+  list.forEach(function(n){
+    var rows = Math.max(n.ins.length, n.outs.length, 1);
+    var np = n.params ? n.params.length : 0;
+    n.w = BOXW;
+    n.h = HEADH + PADV*2 + rows * ROWH + (np ? PARAMPAD + np * PARAMH : 0);
+  });
+
+  var edges = pairUp(parsed.cables);
+  edges.forEach(function(e){
+    e.a = nodes[e.from.key]; e.b = nodes[e.to.key];
+    e.sig = cableSig(e.cables[0]);   /* may be null, resolved next */
+  });
+  var guessed = resolveTypes(edges);
+  var unknown = 0;
+  edges.forEach(function(e){ if (!e.sig){ e.sig = "multi"; e.undetermined = true; unknown++; } });
+  view.guessed = guessed; view.unknown = unknown;
+
+  /* Positions. Anything you've placed stays exactly where you put it — the only
+     things that move are modules with no position yet, and everything when you
+     explicitly ask for a relayout. */
+  list.forEach(function(n){ n._feeds = {}; });
+  edges.forEach(function(e){ e.a._feeds[e.b.key] = 1; });
+
+  if (pendingLayout || !Object.keys(patch.pos).length){
+    /* No saved positions means a patch that was just loaded or pasted whole, so
+       arranging it is welcome rather than intrusive. */
+    autoLayout(list, edges);
+    pendingLayout = false;
+    list.forEach(function(n){ patch.pos[n.key] = { x:n.x, y:n.y }; });
+  } else {
+    var placed = [];
+    list.forEach(function(n){
+      var p = patch.pos[n.key];
+      if (p){ n.x = p.x; n.y = p.y; placed.push(n); }
+    });
+    list.forEach(function(n){
+      if (patch.pos[n.key]) return;
+      var g = placeNew(n, placed);
+      n.x = g.x; n.y = g.y;
+      patch.pos[n.key] = { x:n.x, y:n.y };
+      placed.push(n);
+    });
+  }
+
+  /* Routing for cables drawn right-to-left. There are two quite different
+     reasons a cable does that, and they should not look the same:
+
+       FEEDBACK    the destination is at or before the source in signal order,
+                   so it genuinely closes a loop. Routed below everything it
+                   passes over, reading as a return path.
+
+       WRAP        the destination is further along in signal order, but the
+                   layout wrapped to a new row, so it's drawn to the left. This
+                   is a carriage return, not a loop, and belongs in the gutter
+                   between the two rows.
+
+     Telling them apart by x position alone is impossible, which is why rank is
+     computed on every build rather than only when laying out. */
+  rankNodes(list, edges);
+
+  var lanes = [];
+  edges.forEach(function(e){
+    var x1 = e.a.x + e.a.w, x2 = e.b.x;
+    e.self = e.a.key === e.b.key;
+    e.back = x2 < x1 + 24;
+    e.feedback = e.b._rank <= e.a._rank;
+    e.wrap = e.back && !e.feedback;
+    /* A module patched into itself gets a tight loop around its own box, not a
+       lane. Sending it round the whole diagram to travel 180px is absurd, and
+       self-patching is common enough in modular to be worth the special case —
+       a self-cycling envelope is an entire genre of patch. */
+    if (e.self || !e.back) return;
+
+    var lo = Math.min(x1, x2) - 34, hi = Math.max(x1, x2) + 34;
+    var clear = 0;
+    list.forEach(function(n){
+      if (n.x + n.w < lo || n.x > hi) return;
+      /* A wrap only has to clear what's in its own row and above — it's heading
+         down to the next row, not back over the whole diagram. */
+      if (e.wrap && n.y >= e.b.y) return;
+      clear = Math.max(clear, n.y + n.h);
+    });
+    var y = clear + 20, moved = true;
+    while (moved){
+      moved = false;
+      lanes.forEach(function(L){
+        if (Math.abs(L.y - y) < 12 && L.hi >= lo && L.lo <= hi){ y = L.y + 14; moved = true; }
+      });
+    }
+    lanes.push({ lo:lo, hi:hi, y:y });
+    e.yb = y;
+  });
+
+  var maxx = 0, maxy = 0;
+  list.forEach(function(n){ maxx = Math.max(maxx, n.x+n.w); maxy = Math.max(maxy, n.y+n.h); });
+  lanes.forEach(function(L){ maxy = Math.max(maxy, L.y + 16); });
+  edges.forEach(function(e){ if (e.self) maxy = Math.max(maxy, e.a.y + e.a.h + 30); });
+  var w = Math.max(560, maxx + 40);
+  /* Footer height is not fixed once notes can be any length, so measure them
+     against the width we just settled on and make room. */
+  var nNote = (patch.notes || "").trim()
+    ? wrapNote(patch.notes, w - 44, NOTE_SIZE).length : 0;
+
+  /* What the section filter fades. A cable belongs to the section its line sat
+     under. A module belongs to every section that reaches it, so one shared
+     between two stays prominent in both, which is the truth about it. */
+  list.forEach(function(n){
+    n.dim = !!state.voice && (n.voices || []).indexOf(state.voice) === -1;
+  });
+  edges.forEach(function(e){
+    e.dim = !!state.voice && !e.cables.some(function(c){ return c.voice === state.voice; });
+  });
+
+  view = { nodes:list, edges:edges, guessed:guessed, unknown:unknown, allCables:allCables,
+           w: w,
+           h: Math.max(300, maxy + 78) + (nNote ? nNote * NOTE_LEAD + 6 : 0) };
+  return view;
+}
+function addPort(node, jid, side){
+  if (node[side].indexOf(jid) === -1) node[side].push(jid);
+}
+
+/* ------------------------------------------------------ roles and voices --- */
+/*
+   Two ways to say what a module is doing in the composition rather than what it
+   is. They answer different questions and both are worth having.
+
+     VOICE      which part of the piece.  DRONE:  everything below belongs to it.
+     ROLE       what this module is here for.  vco#lead, lfo#drift
+
+   A role is just a named instance, so `vco#lead` and `vco#drone` are two boxes
+   the same way `vco#1` and `vco#2` always were. Numeric stays numeric: `vco#2`
+   is a second VCO, not a module called 2.
+*/
+function roleOf(n){
+  return (n.inst && !/^\d+$/.test(n.inst)) ? n.inst : null;
+}
+
+/* A node's voice comes from its cables, since that's where the voice lives.
+   Cables under two different headers means the module is shared, and shared is
+   a real answer rather than a tie to break: a mult feeding three voices belongs
+   to none of them. */
+function assignVoices(list, cables){
+  var seen = {};
+  cables.forEach(function(c){
+    if (!c.voice) return;
+    [c.from.key, c.to.key].forEach(function(k){
+      (seen[k] = seen[k] || {})[c.voice] = 1;
+    });
+  });
+  list.forEach(function(n){
+    var vs = Object.keys(seen[n.key] || {});
+    n.voices = vs;
+    n.voice  = vs.length === 1 ? vs[0] : null;
+    n.shared = vs.length > 1;
+  });
+}
+/* ============================================================== auto layout ===
+   Longest-path layering, the first two steps of Sugiyama, and no more than that.
+
+   It is a COMMAND, not a policy. Nothing you have positioned is ever moved by
+   it, and it never runs on its own while you type. Your layout always wins.
+
+   1. break cycles     feedback edges are set aside before ranking, otherwise one
+                       return cable drags a module backwards and ruins the whole
+                       arrangement. This is the step tools skip, and skipping it
+                       is why auto-layout has a bad name on patches with feedback.
+   2. rank             sources at column 0, everything else one past its deepest
+                       input, so signal flows left to right by construction and
+                       the order you happened to type in stops mattering.
+   3. order            sweep back and forth putting each node at the median of
+                       whatever it connects to. This is what removes crossings.
+   4. place            stack using real box heights, which the old single row
+                       ignored entirely.
+   ========================================================================== */
+
+/* Rank every node by longest path from a source, ignoring feedback. Computed on
+   every build, not just when laying out, because ROUTING depends on it: a cable
+   that runs right-to-left because the layout wrapped is a continuation, whereas
+   one that runs right-to-left because it closes a loop is feedback. Judging that
+   by x position alone can't tell them apart. */
+function rankNodes(nodes, edges){
+  var back = backEdges(nodes, edges);
+  var fwd = edges.filter(function(e, i){ return !back[i] && e.a.key !== e.b.key; });
+  nodes.forEach(function(n){ n._rank = 0; });
+  for (var pass = 0; pass < nodes.length; pass++){
+    var moved = false;
+    fwd.forEach(function(e){
+      if (e.b._rank < e.a._rank + 1){ e.b._rank = e.a._rank + 1; moved = true; }
+    });
+    if (!moved) break;
+  }
+  return back;
+}
+
+/* Depth-first back-edge detection. An edge into a node currently on the stack
+   closes a loop, so that edge is the feedback one. */
+function backEdges(nodes, edges){
+  var adj = {}, state = {}, back = {};
+  nodes.forEach(function(n){ adj[n.key] = []; state[n.key] = 0; });
+  edges.forEach(function(e, i){
+    if (e.a.key !== e.b.key) adj[e.a.key].push({ to:e.b.key, i:i });
+  });
+  function visit(k){
+    state[k] = 1;
+    adj[k].forEach(function(x){
+      if (state[x.to] === 1) back[x.i] = 1;
+      else if (state[x.to] === 0) visit(x.to);
+    });
+    state[k] = 2;
+  }
+  nodes.forEach(function(n){ if (!state[n.key]) visit(n.key); });
+  return back;
+}
+
+/* How many columns before wrapping to a new row. Derived from the pane so the
+   result actually fits without scrolling, clamped so rows stay readable. */
+function wrapWidth(){
+  var pane = document.getElementById("right");
+  var fits = Math.floor(((pane ? pane.clientWidth : 1200) - 70) / (BOXW + GAPX));
+  return Math.max(4, Math.min(6, fits || 6));
+}
+
+function autoLayout(nodes, edges){
+  if (!nodes.length) return;
+  rankNodes(nodes, edges);
+
+  var cols = [];
+  nodes.forEach(function(n){ (cols[n._rank] = cols[n._rank] || []).push(n); });
+  cols = cols.filter(Boolean);
+
+  /* Neighbour lists for the ordering sweeps. Feedback edges DO count here —
+     they don't affect which column you're in, but a module you feed back into
+     should still sit near you vertically. */
+  var pred = {}, succ = {};
+  nodes.forEach(function(n){ pred[n.key] = []; succ[n.key] = []; });
+  edges.forEach(function(e){
+    if (e.a.key === e.b.key) return;
+    succ[e.a.key].push(e.b.key); pred[e.b.key].push(e.a.key);
+  });
+
+  function median(keys, posOf){
+    var v = keys.map(function(k){ return posOf[k]; })
+      .filter(function(x){ return x != null; }).sort(function(a,b){ return a-b; });
+    if (!v.length) return null;
+    return v.length % 2 ? v[(v.length-1)/2] : (v[v.length/2 - 1] + v[v.length/2]) / 2;
+  }
+
+  var pos = {};
+  cols.forEach(function(c){ c.forEach(function(n, i){ pos[n.key] = i; }); });
+  for (var sweep = 0; sweep < 4; sweep++){
+    var forward = sweep % 2 === 0;
+    (forward ? cols : cols.slice().reverse()).forEach(function(c){
+      c.forEach(function(n){
+        var m = median(forward ? pred[n.key] : succ[n.key], pos);
+        n._med = m == null ? pos[n.key] : m;
+      });
+      c.sort(function(a, b){ return a._med - b._med; });
+      c.forEach(function(n, i){ pos[n.key] = i; });
+    });
+  }
+
+  /* Wrap into rows, like a paragraph. Each row gets a gutter beneath it wide
+     enough for the continuation cable to travel back to the left margin. */
+  var perRow = wrapWidth(), GAPY = 26, GUTTER = 66;
+  var rows = [];
+  for (var i = 0; i < cols.length; i += perRow) rows.push(cols.slice(i, i + perRow));
+
+  var y0 = 30;
+  rows.forEach(function(row, ri){
+    var heights = row.map(function(c){
+      return c.reduce(function(t, n){ return t + n.h + GAPY; }, -GAPY);
+    });
+    var tallest = Math.max.apply(null, heights);
+    var x = 30;
+    row.forEach(function(c, ci){
+      var y = y0 + (tallest - heights[ci]) / 2;
+      c.forEach(function(n){
+        n.x = Math.round(x / 10) * 10;
+        n.y = Math.round(Math.max(20, y) / 10) * 10;
+        n._row = ri;
+        y += n.h + GAPY;
+      });
+      x += BOXW + GAPX;
+    });
+    y0 += tallest + GUTTER;
+  });
+}
+
+/* Placement for a module that has no saved position, in a patch where other
+   things already do. Sits it just right of whatever feeds it rather than
+   dumping it at the end of the row — and never touches anything positioned. */
+function placeNew(n, placed){
+  var feeders = placed.filter(function(p){ return p._feeds && p._feeds[n.key]; });
+  if (feeders.length){
+    var fx = Math.max.apply(null, feeders.map(function(p){ return p.x + p.w; }));
+    var fy = feeders.reduce(function(t, p){ return t + p.y; }, 0) / feeders.length;
+    return { x: Math.round((fx + GAPX) / 10) * 10, y: Math.round(fy / 10) * 10 };
+  }
+  var right = placed.length ? Math.max.apply(null, placed.map(function(p){ return p.x + p.w; })) : 0;
+  return { x: right ? right + GAPX : 30, y: 40 };
+}
+
+function portY(node, side, jid){
+  var arr = node[side], i = arr.indexOf(jid);
+  return node.y + HEADH + PADV + i*ROWH + ROWH/2;
+}
+function portX(node, side){ return side === "ins" ? node.x : node.x + node.w; }
+
+/* ----------------------------------------------------------------- rendering --- */
+
+var SVGNS = "http://www.w3.org/2000/svg";
+function el(name, attrs, text){
+  var e = document.createElementNS(SVGNS, name);
+  for (var k in attrs) if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  return e;
+}
+/* Everything is set as presentation attributes rather than CSS classes so the
+   exported SVG is self-contained and prints exactly as it looks here. */
+function render(){
+  var v = build();
+  var svg = document.getElementById("diagram");
+  /* Editing the text can retire a key out from under the selection. */
+  selPrune();
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  svg.setAttribute("width", v.w); svg.setAttribute("height", v.h);
+  svg.setAttribute("viewBox", "0 0 "+v.w+" "+v.h);
+  /* Deliberately NOT setting xmlns here — XMLSerializer emits the namespace
+     declaration itself, and setting it as an attribute too produces a duplicate
+     that strict XML parsers reject. The export handler adds it only if missing. */
+  svg.setAttribute("font-family", "ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif");
+
+  var defs = el("defs");
+  SIGORDER.forEach(function(s){
+    /* markerUnits=userSpaceOnUse, otherwise the arrowhead scales with stroke
+       width and the 5.4px stereo cables sprout arrows the size of the ports.
+       refX past the tip pulls it back so the port dot stays visible. */
+    var mk = el("marker", { id:"arw-"+s, viewBox:"0 0 10 10", refX:"13", refY:"5",
+      markerWidth:"7.5", markerHeight:"7.5", markerUnits:"userSpaceOnUse", orient:"auto" });
+    mk.appendChild(el("path", { d:"M 0 0 L 10 5 L 0 10 z", fill:SIG[s].c }));
+    defs.appendChild(mk);
+  });
+  svg.appendChild(defs);
+  svg.appendChild(el("rect", { x:0, y:0, width:v.w, height:v.h, fill:TH.sheet }));
+
+  var gCables = el("g"), gBoxes = el("g");
+  svg.appendChild(gCables); svg.appendChild(gBoxes);
+
+  /* (bottom/lane bookkeeping now lives in build(), where the canvas height is set) */
+
+  v.edges.forEach(function(e){
+    var s = SIG[e.sig];
+    /* One group per cable so a single opacity covers the trunk, its white
+       casing, the arrowhead and any label. */
+    var gc = el("g", { opacity: e.dim ? DIM : null });
+    gCables.appendChild(gc);
+    /* Every real port this edge touches — two at each end when it's a stereo
+       pair. The merged line has to actually land on all of them, otherwise the
+       R ports sit there looking unpatched when they aren't. */
+    var srcs = e.cables.map(function(c){
+      return { x: portX(e.a,"outs"), y: portY(e.a,"outs", c.from.jack) }; });
+    var dsts = e.cables.map(function(c){
+      return { x: portX(e.b,"ins"),  y: portY(e.b,"ins",  c.to.jack) }; });
+    function avgY(a){ return a.reduce(function(t,p){ return t+p.y; }, 0) / a.length; }
+
+    var x1 = srcs[0].x, x2 = dsts[0].x;
+    var sy = avgY(srcs), dy = avgY(dsts);
+    var back = e.back;
+    /* Stereo pulls the trunk back from the box edge to leave room for the fork.
+       Feedback edges need it too, otherwise the fork collapses onto the panel
+       edge and reads as a vertical bar rather than a join. */
+    var fx = e.stereo ? x1 + 18 : x1;
+    var gx = e.stereo ? x2 - 18 : x2;
+
+    var d, yb = null;
+    if (e.self){
+      /* Out of the output, around the nearer edge of the box, back into the
+         input. Above unless that would run off the top of the canvas. */
+      var n = e.a;
+      var over = (Math.min(sy, dy) - n.y) <= ((n.y + n.h) - Math.max(sy, dy));
+      if (over && n.y < 40) over = false;
+      var yy = over ? n.y - 16 : n.y + n.h + 16;
+      d = "M "+x1+" "+sy+" L "+(x1+18)+" "+sy+" L "+(x1+18)+" "+yy+
+          " L "+(x2-18)+" "+yy+" L "+(x2-18)+" "+dy+" L "+x2+" "+dy;
+    } else if (!back){
+      var dx = Math.max(30, (gx - fx) * 0.45);
+      d = "M "+fx+" "+sy+" C "+(fx+dx)+" "+sy+", "+(gx-dx)+" "+dy+", "+gx+" "+dy;
+    } else {
+      /* Orthogonal route: a feedback return below what it passes over, or a
+         wrap dropping into the gutter on its way to the next row. Lane assigned
+         in build() so the canvas height can account for it. */
+      yb = e.yb;
+      d = "M "+fx+" "+sy+" L "+(fx+22)+" "+sy+" L "+(fx+22)+" "+yb+
+          " L "+(gx-22)+" "+yb+" L "+(gx-22)+" "+dy+" L "+gx+" "+dy;
+    }
+
+    if (e.stereo){
+      /* Fork out of both source ports into the trunk... */
+      srcs.forEach(function(p){
+        gc.appendChild(el("path", { d:"M "+p.x+" "+p.y+" L "+fx+" "+sy,
+          fill:"none", stroke:s.c, "stroke-width":2.2, "stroke-dasharray":s.d||null }));
+      });
+      /* ...the trunk as a railroad, a fat stroke with a thin white core... */
+      gc.appendChild(el("path", { d:d, fill:"none", stroke:s.c, "stroke-width":5.4,
+        "stroke-dasharray":s.d||null, "stroke-linejoin":"round" }));
+      gc.appendChild(el("path", { d:d, fill:"none", stroke:TH.knock, "stroke-width":1.8,
+        "stroke-linejoin":"round" }));
+      /* ...and back out to both destination ports, each with its own arrowhead. */
+      dsts.forEach(function(p){
+        gc.appendChild(el("path", { d:"M "+gx+" "+dy+" L "+p.x+" "+p.y,
+          fill:"none", stroke:s.c, "stroke-width":2.2, "stroke-dasharray":s.d||null,
+          "marker-end":"url(#arw-"+e.sig+")" }));
+      });
+    } else {
+      gc.appendChild(el("path", { d:d, fill:"none", stroke:s.c, "stroke-width":2.2,
+        "stroke-dasharray":s.d||null, "stroke-linejoin":"round",
+        "marker-end":"url(#arw-"+e.sig+")" }));
+    }
+
+    var note = e.cables.map(function(c){ return c.note; }).filter(Boolean)[0];
+    if (note){
+      gc.appendChild(el("text", { x:(fx+gx)/2, y: back ? yb - 5 : (sy+dy)/2 - 6,
+        "text-anchor":"middle", "font-size":9.5, fill:TH.ink2, "font-style":"italic" }, note));
+    }
+  });
+
+  /* A port's colour should agree with the cable plugged into it. Colouring it
+     from the jack's own sig means a `multi` input carrying audio draws a grey
+     dot on the end of a red cable, which reads as a contradiction. The jack's
+     type is the fallback for ports we somehow didn't route. */
+  var portSig = {};
+  v.edges.forEach(function(e){
+    e.cables.forEach(function(c){
+      portSig[c.from.key + "\u0000" + c.from.jack] = e.sig;
+      portSig[c.to.key   + "\u0000" + c.to.jack]   = e.sig;
+    });
+  });
+
+  v.nodes.forEach(function(n){
+    var m = byId(n.mod), gen = !!m.generic;
+    var g = el("g", { "class":"box" + (sel[n.key] ? " sel" : ""), "data-key":n.key,
+                      opacity: n.dim ? DIM : null });
+    /* Generic placeholders get the same solid box as anything else — they're
+       marked by the italic name and the "generic" subtitle, which is enough to
+       tell them apart without making half the diagram look provisional. */
+    g.appendChild(el("rect", { x:n.x, y:n.y, width:n.w, height:n.h, rx:5,
+      fill:TH.sheet, stroke:TH.rule, "stroke-width":1.4 }));
+    /* Title wash by category. Generics take the same tint as the real thing —
+       a generic VCO and an Ensemble Oscillator are both sound sources, and
+       that's the useful reading. What still separates them is the italic name
+       and the "generic" subtitle, which was always the load-bearing signal. */
+    /* Rounded at the top only, square where it meets the rule. A plain rx rect
+       rounds all four corners and leaves two white notches under the title —
+       invisible at the old near-grey, obvious once there's a hue in there. */
+    var hx = n.x, hy = n.y, hw = n.w, hr = 5;
+    g.appendChild(el("path", { d:
+      "M "+hx+" "+(hy+HEADH)+" L "+hx+" "+(hy+hr)+
+      " Q "+hx+" "+hy+" "+(hx+hr)+" "+hy+
+      " L "+(hx+hw-hr)+" "+hy+
+      " Q "+(hx+hw)+" "+hy+" "+(hx+hw)+" "+(hy+hr)+
+      " L "+(hx+hw)+" "+(hy+HEADH)+" Z",
+      fill: catFill(m) || (gen ? TH.genfill : TH.nofill), stroke:"none" }));
+    g.appendChild(el("line", { x1:n.x, y1:n.y+HEADH, x2:n.x+n.w, y2:n.y+HEADH,
+      stroke:TH.rule, "stroke-width":1.1 }));
+    /* A named instance is a ROLE — vco#lead — and it earns the second line,
+       because on a diagram you're reading to remember a patch "lead" is worth
+       more than "Instruo". A numeric one is just a second of the same module,
+       so it stays in the title where it always was and the maker keeps the line. */
+    var role = roleOf(n);
+    g.appendChild(el("text", { x:n.x+9, y:n.y+15, "font-size":12, "font-weight":"700",
+      "font-style": gen ? "italic" : null, fill: gen ? TH.gen : TH.ink },
+      m.name + (role ? "" : (n.inst ? " #"+n.inst : ""))));
+    g.appendChild(el("text", { x:n.x+9, y:n.y+25, "font-size":8.5,
+      fill: role ? TH.role : TH.ink3,
+      "font-weight": role ? "600" : null,
+      "font-style": (gen && !role) ? "italic" : null },
+      role ? role
+           : (gen ? (m.kind ? "generic · "+m.kind : "generic") : (m.mfr || m.libName || ""))));
+
+    n.ins.forEach(function(jid, i){
+      var y = n.y + HEADH + PADV + i*ROWH + ROWH/2;
+      var j = jack(n.mod, jid);
+      var s = SIG[portSig[n.key + "\u0000" + jid] || j.sig] || SIG.multi;
+      /* A hollow port means patching here displaces an internal connection.
+         Filled means it doesn't. That distinction is the reason the normalled
+         prose was worth collecting in the first place. */
+      g.appendChild(el("circle", { cx:n.x, cy:y, r:3.6,
+        fill: j.normalled ? TH.sheet : s.c, stroke: j.normalled ? s.c : TH.sheet,
+        "stroke-width": j.normalled ? 1.8 : 1 }));
+      g.appendChild(el("text", { x:n.x+9, y:y+3.4, "font-size":10.5, fill:TH.ink },
+        j.label + (j.normalled ? " *" : "")));
+    });
+    n.outs.forEach(function(jid, i){
+      var y = n.y + HEADH + PADV + i*ROWH + ROWH/2;
+      var j = jack(n.mod, jid);
+      var s = SIG[portSig[n.key + "\u0000" + jid] || j.sig] || SIG.multi;
+      g.appendChild(el("circle", { cx:n.x+n.w, cy:y, r:3.6, fill:s.c, stroke:TH.sheet, "stroke-width":1 }));
+      g.appendChild(el("text", { x:n.x+n.w-9, y:y+3.4, "font-size":10.5, fill:TH.ink,
+        "text-anchor":"end" }, j.label));
+    });
+
+    /* Knob settings, under a rule at the bottom of the box. A patch you can't
+       rebuild from the diagram isn't documented, and cables are only half of it. */
+    if (n.params && n.params.length){
+      var py = n.y + HEADH + PADV*2 + Math.max(n.ins.length, n.outs.length, 1) * ROWH - PADV;
+      g.appendChild(el("line", { x1:n.x+8, y1:py, x2:n.x+n.w-8, y2:py,
+        stroke:TH.hair, "stroke-width":1 }));
+      n.params.forEach(function(p, i){
+        var ty = py + PARAMPAD + i*PARAMH + 4;
+        g.appendChild(el("text", { x:n.x+9, y:ty, "font-size":9, fill:TH.ink2 }, p.name));
+        g.appendChild(el("text", { x:n.x+n.w-9, y:ty, "font-size":9, fill:TH.ink,
+          "text-anchor":"end", "font-weight":"600" }, p.value));
+      });
+    }
+    gBoxes.appendChild(g);
+  });
+
+  drawLegend(svg, v);
+  drawBand(svg);
+  wireDrag(svg);
+  applyZoom();   /* render() resets width/height, so restore the zoom */
+  report();
+  updateStat();
+}
+
+/* SVG text does not wrap. Break the notes into lines that fit the diagram width,
+   measuring in the crude but dependable way: an average character advance for the
+   font size, which is close enough for a proportional face at this size and needs
+   no DOM measurement pass. Long words are left to overhang rather than hyphenated. */
+function wrapNote(text, width, size){
+  var per = size * 0.52, max = Math.max(20, Math.floor(width / per)), out = [];
+  String(text).split(/\n/).forEach(function(para){
+    if (!para.trim()){ out.push(""); return; }
+    var line = "";
+    para.trim().split(/\s+/).forEach(function(w){
+      if (!line) { line = w; return; }
+      if ((line + " " + w).length <= max) line += " " + w;
+      else { out.push(line); line = w; }
+    });
+    if (line) out.push(line);
+  });
+  while (out.length && out[out.length-1] === "") out.pop();
+  return out;
+}
+function noteLines(v){
+  var t = (patch.notes || "").trim();
+  return t ? wrapNote(t, v.w - 44, NOTE_SIZE) : [];
+}
+
+function drawLegend(svg, v){
+  var used = {};
+  v.edges.forEach(function(e){ used[e.sig] = 1; });
+  var keys = SIGORDER.filter(function(s){ return used[s]; });
+  /* NOTE: no early return when there are no cable types. A patch can have boxes
+     and no cables at all (parameters only), and bailing here used to take the
+     name and counts line with it. Only the swatches are conditional. */
+  /* The footer is a stack, so everything above the notes has to move up by
+     exactly as much as the notes take. Anchoring only the name line to the note
+     height, as a first attempt did, drops the notes straight through the legend. */
+  var nl = noteLines(v);
+  var noteH = nl.length ? nl.length * NOTE_LEAD + 6 : 0;
+  var y = v.h - 46 - noteH, x = 26;
+  if (!keys.length && !nl.length && !v.nodes.length) return;
+  svg.appendChild(el("line", { x1:20, y1:y-16, x2:v.w-20, y2:y-16, stroke:TH.hair2, "stroke-width":1 }));
+  keys.forEach(function(s){
+    svg.appendChild(el("path", { d:"M "+x+" "+y+" L "+(x+34)+" "+y, stroke:SIG[s].c,
+      "stroke-width":2.2, "stroke-dasharray":SIG[s].d||null, fill:"none" }));
+    svg.appendChild(el("text", { x:x+40, y:y+3.5, "font-size":10, fill:TH.ink2 }, SIG[s].n));
+    x += 44 + SIG[s].n.length * 5.6 + 16;
+  });
+  if (v.edges.some(function(e){ return e.stereo; })){
+    svg.appendChild(el("path", { d:"M "+x+" "+y+" L "+(x+34)+" "+y, stroke:TH.gen, "stroke-width":5.4, fill:"none" }));
+    svg.appendChild(el("path", { d:"M "+x+" "+y+" L "+(x+34)+" "+y, stroke:TH.knock, "stroke-width":1.8, fill:"none" }));
+    svg.appendChild(el("text", { x:x+40, y:y+3.5, "font-size":10, fill:TH.ink2 }, "stereo pair"));
+    x += 132;
+  }
+  if (v.nodes.some(function(n){
+        return n.ins.some(function(j){ var k=jack(n.mod,j); return k && k.normalled; }); })){
+    svg.appendChild(el("circle", { cx:x+8, cy:y, r:3.6, fill:TH.sheet, stroke:TH.gen, "stroke-width":1.8 }));
+    svg.appendChild(el("text", { x:x+18, y:y+3.5, "font-size":10, fill:TH.ink2 }, "* breaks a normal"));
+  }
+  var baseY = v.h - 14 - noteH;
+  svg.appendChild(el("text", { x:20, y:baseY, "font-size":10, fill:TH.faint },
+    (patch.name || "Untitled patch") + " · " + v.nodes.length + " modules · " +
+    parsed.cables.length + " cables"));
+  nl.forEach(function(t, i){
+    if (!t) return;
+    svg.appendChild(el("text", { x:20, y:baseY + 16 + i*NOTE_LEAD,
+      "font-size":NOTE_SIZE, fill:TH.gen }, t));
+  });
+}
+
+/* ------------------------------------------------------------------ dragging --- */
+
+/* ------------------------------------------------------- select and drag ---
+   Selection lives here rather than in the patch, because it is about what you
+   are doing right now, not about the patch itself. It is deliberately not
+   saved: reopening a patch should not restore a selection you have forgotten
+   making.
+
+   Shift-click adds or removes one. Dragging on empty canvas rubber-bands.
+   Dragging a selected box moves the whole selection.
+*/
+var sel = {};                       /* key -> 1 */
+var drag = null, band = null;
+
+function selCount(){ return Object.keys(sel).length; }
+function clearSel(){ sel = {}; }
+function selPrune(){                /* keys can vanish when the text changes */
+  var live = {};
+  ((view && view.nodes) || []).forEach(function(n){ if (sel[n.key]) live[n.key] = 1; });
+  sel = live;
+}
+
+/* The SVG is scaled with CSS width/height, so getBoundingClientRect() is in
+   scaled pixels while node coordinates are not. Everything below converts once,
+   here. Without it a box travels twice as far as the pointer at 200%. */
+function svgPt(svg, ev){
+  var r = svg.getBoundingClientRect(), z = ui.zoom || 1;
+  return { x: (ev.clientX - r.left) / z, y: (ev.clientY - r.top) / z };
+}
+
+/* render() rebuilds the diagram's children but keeps the same <svg>, so this
+   has to be idempotent. It wasn't: every render added another mousedown
+   listener, and by the time you'd dragged a few boxes a single click was
+   running the handler dozens of times. */
+function wireDrag(svg){
+  if (svg.__wired) return;
+  svg.__wired = true;
+  svg.addEventListener("mousedown", function(ev){
+    if (ev.button !== 0) return;
+    var g = ev.target.closest ? ev.target.closest(".box") : null;
+    var p = svgPt(svg, ev);
+
+    /* Empty canvas: start a rubber band. Plain drag replaces the selection,
+       shift-drag adds to it. */
+    if (!g){
+      ev.preventDefault();
+      if (!ev.shiftKey && selCount()){ clearSel(); render(); }
+      band = { svg:svg, x0:p.x, y0:p.y, x1:p.x, y1:p.y, add:{} };
+      for (var k in sel) band.add[k] = 1;
+      document.addEventListener("mousemove", onBand);
+      document.addEventListener("mouseup", endBand);
+      return;
+    }
+
+    ev.preventDefault();
+    var key = g.getAttribute("data-key");
+    var n = view.nodes.filter(function(x){ return x.key === key; })[0];
+    if (!n) return;
+
+    if (ev.shiftKey){
+      /* Toggle, and do not start a drag. Picking members should not nudge them. */
+      if (sel[key]) delete sel[key]; else sel[key] = 1;
+      render();
+      return;
+    }
+    /* Dragging an unselected box selects just it, so a plain drag behaves the
+       way it always did. Dragging one that is already selected keeps the set. */
+    if (!sel[key]){ clearSel(); sel[key] = 1; }
+
+    var keys = Object.keys(sel), from = {};
+    keys.forEach(function(k){
+      var m = view.nodes.filter(function(x){ return x.key === k; })[0];
+      if (m) from[k] = { x:m.x, y:m.y };
+    });
+    var minx = Infinity, miny = Infinity;
+    keys.forEach(function(k){
+      if (!from[k]) return;
+      minx = Math.min(minx, from[k].x); miny = Math.min(miny, from[k].y);
+    });
+    drag = { svg:svg, px:p.x, py:p.y, from:from, minx:minx, miny:miny, moved:false };
+    g.classList.add("dragging");
+    document.addEventListener("mousemove", onDrag);
+    document.addEventListener("mouseup", endDrag);
+    render();
+  });
+}
+
+function onDrag(ev){
+  if (!drag) return;
+  var p = svgPt(drag.svg, ev);
+  /* One delta, snapped once, applied to every member. Snapping each box on its
+     own would shear the group apart as they cross grid lines at different
+     moments. */
+  var dx = Math.round((p.x - drag.px) / 10) * 10;
+  var dy = Math.round((p.y - drag.py) / 10) * 10;
+  /* Clamp the delta, not each box. Clamping individually lets the leading edge
+     of the group stop at the margin while the rest keeps coming, and the
+     arrangement you built is quietly flattened into a pile. */
+  dx = Math.max(dx, 10 - drag.minx);
+  dy = Math.max(dy, 10 - drag.miny);
+  if (dx || dy) drag.moved = true;
+  Object.keys(drag.from).forEach(function(k){
+    patch.pos[k] = { x: drag.from[k].x + dx, y: drag.from[k].y + dy };
+  });
+  render();
+}
+function endDrag(){
+  document.removeEventListener("mousemove", onDrag);
+  document.removeEventListener("mouseup", endDrag);
+  /* A click that never moved anything is a click, so it leaves one box picked
+     rather than a stale selection of one. */
+  drag = null; save(); render();
+}
+
+function onBand(ev){
+  if (!band) return;
+  var p = svgPt(band.svg, ev);
+  band.x1 = p.x; band.y1 = p.y;
+  var lo = { x: Math.min(band.x0, band.x1), y: Math.min(band.y0, band.y1) };
+  var hi = { x: Math.max(band.x0, band.x1), y: Math.max(band.y0, band.y1) };
+  sel = {};
+  for (var k in band.add) sel[k] = 1;
+  /* Touch, not enclose. Requiring a box to be fully surrounded means missing
+     the one you were obviously reaching for. */
+  view.nodes.forEach(function(n){
+    if (n.x < hi.x && n.x + n.w > lo.x && n.y < hi.y && n.y + n.h > lo.y) sel[n.key] = 1;
+  });
+  render();
+}
+function endBand(){
+  document.removeEventListener("mousemove", onBand);
+  document.removeEventListener("mouseup", endBand);
+  band = null; render();
+}
+function drawBand(svg){
+  if (!band) return;
+  svg.appendChild(el("rect", { id:"band",
+    x: Math.min(band.x0, band.x1), y: Math.min(band.y0, band.y1),
+    width:  Math.abs(band.x1 - band.x0),
+    height: Math.abs(band.y1 - band.y0) }));
+}
+
+/* ------------------------------------------------------------------ warnings --- */
+
+function report(){
+  var out = [];
+  parsed.errors.forEach(function(e){
+    out.push({ lvl:"err", ln:e.line, html:e.msg });
+  });
+
+  parsed.cables.forEach(function(c){
+    var a = jack(c.from.mod, c.from.jack), b = jack(c.to.mod, c.to.jack);
+    /* Direction. `both` jacks (passive mults) legitimately go either way. */
+    if (a.dir === "in")
+      out.push({ lvl:"err", ln:c.line, html:"<b>"+esc(a.label)+"</b> on "+esc(c.from.mod)+
+        " is an input, so it can't be the source of a cable." });
+    if (b.dir === "out")
+      out.push({ lvl:"err", ln:c.line, html:"<b>"+esc(b.label)+"</b> on "+esc(c.to.mod)+
+        " is an output, so it can't be the destination." });
+    /* NO TYPE-MISMATCH WARNING. A clock into a gate input, an LFO into V/OCT,
+       audio into a CV input — all ordinary patching. The source decides the
+       cable's type and that's the end of it. */
+  });
+
+  /* Normalling that this patch is actively breaking is the single most useful
+     thing this tool can tell you, so it goes last where it'll be read. */
+  /* You cannot physically plug two cables into one input. PatchBook's data model
+     enforces this by overwriting, silently — better to say so. If you meant to
+     feed two things there you want a mult, or a stackable, and the diagram
+     should show that rather than pretend. */
+  var inUse = {};
+  (view.allCables || parsed.cables).forEach(function(c){
+    var k = c.to.key + ":" + c.to.jack;
+    (inUse[k] = inUse[k] || []).push(c);
+  });
+  Object.keys(inUse).forEach(function(k){
+    var cs = inUse[k];
+    if (cs.length < 2) return;
+    var j = jack(cs[0].to.mod, cs[0].to.jack);
+    out.push({ lvl:"err", ln:cs[0].line, html:"<b>"+cs.length+" cables into one input.</b> "+
+      esc(cs[0].to.key)+" <span class='mono'>"+esc(cs[0].to.jack)+"</span>"+
+      (j ? " ("+esc(j.label)+")" : "")+" is fed from lines "+
+      cs.map(function(c){ return c.line; }).join(", ")+
+      ". Only one cable fits. Patch a mult in, or use a stackable." });
+  });
+
+  var seen = {};
+  parsed.cables.forEach(function(c){
+    var b = jack(c.to.mod, c.to.jack);
+    var k = c.to.key + ":" + c.to.jack;
+    if (b.normalled && !seen[k]){
+      seen[k] = 1;
+      out.push({ lvl:"ok", ln:c.line, html:"Patching <b>"+esc(b.label)+"</b> on "+esc(c.to.mod)+
+        " breaks a normal: "+esc(b.normalled) });
+    }
+  });
+
+  /* One summary line each, not one per cable — this is the difference between a
+     useful nudge and a wall you learn to ignore. */
+  if (view.unknown)
+    out.push({ lvl:"warn", ln:0, html:"<b>"+view.unknown+"</b> cable"+(view.unknown===1?"":"s")+
+      " draw grey: both ends are type-agnostic jacks and nothing upstream settles it. "+
+      "Add a <span class='mono'>[type]</span> tag if you want them coloured." });
+  if (view.guessed)
+    out.push({ lvl:"ok", ln:0, html:"<b>"+view.guessed+"</b> cable"+(view.guessed===1?"":"s")+
+      " coloured by following the signal through a type-agnostic module, rather than from the jacks themselves." });
+
+  var host = document.getElementById("msgs");
+  if (!out.length){
+    host.innerHTML = parsed.cables.length
+      ? '<div class="msg ok">Nothing to flag.</div>' : "";
+    return;
+  }
+  var order = { err:0, warn:1, ok:2 };
+  out.sort(function(x,y){ return order[x.lvl]-order[y.lvl] || x.ln-y.ln; });
+  host.innerHTML = out.map(function(o){
+    /* A message with a line number is a way back to the line. One without is
+       about the whole patch, so it stays inert rather than pretending. */
+    return '<div class="msg '+(o.lvl==="err"?"err":o.lvl==="warn"?"warn":"ok")+
+      (o.ln ? ' goto" data-ln="'+o.ln+'"' : '"')+'>'+
+      '<span class="ln">'+(o.ln || "")+'</span>'+o.html+'</div>';
+  }).join("");
+}
+
+/* Click a message, land on the line it is about. The line number was always
+   printed and you always had to go and find it yourself. */
+document.getElementById("msgs").addEventListener("click", function(ev){
+  var row = ev.target.closest && ev.target.closest(".msg.goto");
+  if (!row) return;
+  var ln = parseInt(row.getAttribute("data-ln"), 10);
+  if (!ln) return;
+  var ta = document.getElementById("src"), lines = ta.value.split("\n");
+  if (ln > lines.length) return;
+  var from = 0;
+  for (var i = 0; i < ln - 1; i++) from += lines[i].length + 1;
+  ta.focus();
+  ta.setSelectionRange(from, from + lines[ln-1].length);
+  /* Textareas do not scroll to a selection on their own. Approximate the line
+     height from the computed style and put the line a third of the way down. */
+  var lh = parseFloat(getComputedStyle(ta).lineHeight) || 18;
+  ta.scrollTop = Math.max(0, (ln - 1) * lh - ta.clientHeight / 3);
+});
+function paintVoices(){
+  var sel = document.getElementById("vfilter");
+  var vs = parsed.voices || [];
+  if (!vs.length){ sel.style.display = "none"; state.voice = ""; return; }
+  sel.style.display = "";
+  if (state.voice && vs.indexOf(state.voice) === -1) state.voice = "";
+  sel.innerHTML = '<option value="">All sections</option>' + vs.map(function(v){
+    return '<option value="'+esc(v)+'"'+(v===state.voice?" selected":"")+'>'+esc(v)+'</option>';
+  }).join("");
+}
+document.getElementById("vfilter").addEventListener("change", function(){
+  state.voice = this.value; render();
+});
+
+function updateStat(){
+  var e = parsed.errors.length + document.querySelectorAll("#msgs .msg.err").length;
+  document.getElementById("stat").innerHTML =
+    view.nodes.length + " modules · " + parsed.cables.length + " cables" +
+    (selCount() > 1 ? " · " + selCount() + " selected" : "") +
+    (e ? ' · <span style="color:var(--bad)">'+e+' problems</span>' : "") +
+    /* Said out loud rather than discovered when the tab closes. modules.html
+       has carried this warning since it was written; the patch tool never did,
+       which was the worse omission of the two. */
+    (STORAGE_OK ? "" : ' · <span style="color:var(--bad)" title="Firefox refuses '+
+      'local storage on file:// pages. File → Export all patches keeps your work. '+
+      'Serving the folder over http://localhost avoids the problem entirely.">not saving — export to keep</span>');
+}
+
+/* -------------------------------------------------------------- autocomplete --- */
+
+var ac = { open:false, items:[], sel:0, from:0, to:0 };
+function acHide(){ ac.open = false; document.getElementById("ac").style.display = "none"; }
+function acShow(){
+  var ta = document.getElementById("src");
+  var caret = ta.selectionStart;
+  var before = ta.value.slice(0, caret);
+  var mj = before.match(/([a-z0-9\-]+)(?:#[a-z0-9\-]+)?:([a-z0-9\-]*)$/i);
+  var items = [], from = caret;
+  if (mj && byId(mj[1])){
+    var js = jacksFor(mj[1]) || [];
+    var q = mj[2].toLowerCase();
+    items = js.filter(function(j){ return j.id.indexOf(q) === 0 || j.label.toLowerCase().indexOf(q) === 0; })
+      .map(function(j){ return { ins:j.id, lab:j.id, hint:j.label+" · "+j.dir+" · "+j.sig }; });
+    from = caret - mj[2].length;
+  } else {
+    var mm = before.match(/([a-z0-9\-]*)$/i);
+    var q2 = (mm ? mm[1] : "").toLowerCase();
+    if (!q2) { acHide(); return; }
+    /* Generics sort after real modules — you own the real ones, they should come
+       first when both match what you've typed. */
+    items = allModules()
+      .filter(function(m){ return m.id.indexOf(q2) === 0 || m.name.toLowerCase().indexOf(q2) === 0; })
+      .filter(function(m){ return jacksFor(m.id) && !noJacks(m.id); })
+      .filter(function(m){ return !HIDDEN[m.id]; })
+      .sort(function(a,b){ return (a.generic?1:0) - (b.generic?1:0); })
+      .map(function(m){ return { ins:m.id+":", lab:m.id,
+        hint: m.libName ? m.libName+" · "+m.name : m.name }; });
+    from = caret - q2.length;
+  }
+  if (!items.length){ acHide(); return; }
+  ac.open = true; ac.items = items.slice(0,40); ac.sel = 0; ac.from = from; ac.to = caret;
+  var box = document.getElementById("ac");
+  box.innerHTML = ac.items.map(function(it,i){
+    return '<div class="'+(i===0?"sel":"")+'" data-i="'+i+'">'+esc(it.lab)+'<small>'+esc(it.hint)+'</small></div>';
+  }).join("");
+  var co = caretXY(ta);
+  box.style.display = "block";
+  box.style.left = Math.min(co.x, 210) + "px";
+  box.style.top  = (co.y + 18) + "px";
+}
+function acAccept(){
+  if (!ac.open) return false;
+  var ta = document.getElementById("src"), it = ac.items[ac.sel];
+  ta.value = ta.value.slice(0, ac.from) + it.ins + ta.value.slice(ac.to);
+  var c = ac.from + it.ins.length;
+  ta.selectionStart = ta.selectionEnd = c;
+  acHide(); onEdit();
+  if (it.ins.slice(-1) === ":") setTimeout(acShow, 0);
+  return true;
+}
+/* Rough caret position — good enough to put the popup near where you're typing. */
+function caretXY(ta){
+  var before = ta.value.slice(0, ta.selectionStart);
+  var lines = before.split("\n");
+  return { x: 12 + (lines[lines.length-1].length * 7.1),
+           y: 8 + (lines.length-1) * 20.6 - ta.scrollTop };
+}
+
+/* -------------------------------------------------------------------- wiring --- */
+
+function esc(s){
+  return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function msg(lvl, text){
+  document.getElementById("msgs").innerHTML =
+    '<div class="msg '+lvl+'">'+esc(text)+'</div>';
+}
+
+var tmr = null;
+function onEdit(){
+  patch.src = document.getElementById("src").value;
+  clearTimeout(tmr);
+  tmr = setTimeout(function(){ render(); save(); }, 140);
+}
+
+document.getElementById("src").addEventListener("input", function(){ onEdit(); acShow(); });
+document.getElementById("src").addEventListener("blur", function(){ setTimeout(acHide, 150); });
+document.getElementById("src").addEventListener("keydown", function(ev){
+  if (ac.open){
+    if (ev.key === "ArrowDown"){ ev.preventDefault(); ac.sel = (ac.sel+1)%ac.items.length; paintAc(); return; }
+    if (ev.key === "ArrowUp"){ ev.preventDefault(); ac.sel = (ac.sel-1+ac.items.length)%ac.items.length; paintAc(); return; }
+    if (ev.key === "Tab" || ev.key === "Enter"){ if (acAccept()) ev.preventDefault(); return; }
+    if (ev.key === "Escape"){ ev.preventDefault(); acHide(); return; }
+  }
+  if (ev.key === " " && (ev.ctrlKey || ev.metaKey)){ ev.preventDefault(); acShow(); }
+});
+function paintAc(){
+  var box = document.getElementById("ac");
+  [].forEach.call(box.children, function(c,i){ c.className = i===ac.sel ? "sel" : ""; });
+}
+document.getElementById("ac").addEventListener("mousedown", function(ev){
+  var d = ev.target.closest("[data-i]"); if (!d) return;
+  ev.preventDefault(); ac.sel = +d.dataset.i; acAccept();
+});
+
+document.getElementById("pname").addEventListener("input", function(){
+  patch.name = this.value; save(); render(); paintList();
+});
+
+/* Notes belong to the PATCH, not to the browser, so they travel in the JSON
+   export and the SVG. Re-rendering on every keystroke is fine: the diagram is
+   redrawn from scratch anyway and the footer is the only part that moves. */
+document.getElementById("notes").addEventListener("input", function(){
+  patch.notes = this.value; save(); render();
+});
+
+/* A patch backed by patches/patches.js is marked, and marked differently once
+   it carries an edit, because those two states have different consequences:
+   one can be deleted from the file, the other can be reverted to it. */
+function paintList(){
+  var sel = document.getElementById("plist");
+  sel.innerHTML = patchIds().map(function(k){
+    var p = getPatch(k), tag = isEdited(k) ? " ·edited" : (fromFile(k) ? " ·file" : "");
+    return '<option value="'+esc(k)+'"'+(k===patch.id?" selected":"")+'>'+
+      esc(p.name || "Untitled patch")+esc(tag)+'</option>';
+  }).join("");
+
+  /* The badge is the visible half of this and the menu item is the actionable
+     half. Showing one without the other is how a feature goes unnoticed. */
+  var badge = document.getElementById("pstate");
+  badge.className = isEdited(patch.id) ? "edited" : (fromFile(patch.id) ? "file" : "");
+  badge.textContent = isEdited(patch.id) ? "edited" : (fromFile(patch.id) ? "file" : "");
+  badge.title = isEdited(patch.id)
+    ? "Changed from the copy in patches/patches.js. File → Revert to file puts it back."
+    : (fromFile(patch.id) ? "Exactly as it is in patches/patches.js." : "");
+
+  /* Revert is hidden rather than disabled when it doesn't apply. A greyed item
+     for a state you can't be in is noise, and the badge above already says
+     which state you are in. Delete is different: it's always a thing you might
+     want, so it stays and explains why it's refused. */
+  var rev = document.getElementById("brevert"), del = document.getElementById("bdel");
+  rev.style.display = isEdited(patch.id) ? "" : "none";
+  del.disabled = fromFile(patch.id);
+  del.title = fromFile(patch.id)
+    ? "This patch comes from patches/patches.js. Remove it there."
+    : "";
+}
+document.getElementById("plist").addEventListener("change", function(){
+  save(); showPatch(getPatch(this.value)); save(); paintList(); render();
+});
+document.getElementById("bnew").addEventListener("click", function(){
+  save(); var np = newPatch(); store.patches[np.id] = np;
+  showPatch(np); save(); paintList(); render();
+});
+document.getElementById("bdup").addEventListener("click", function(){
+  save();
+  var copy = clonePatch(patch);
+  copy.id = newPatch().id;
+  copy.name = uniquePatchName((patch.name || "Untitled") + " copy");
+  store.patches[copy.id] = copy;
+  showPatch(copy); save(); paintList(); render();
+});
+/* Reverting is just dropping the override. The file copy was never touched,
+   so there is nothing to restore from — it simply stops being shadowed. */
+document.getElementById("brevert").addEventListener("click", function(){
+  if (!isEdited(patch.id)) return;
+  if (!confirm("Throw away your changes to “"+(patch.name||"Untitled patch")+
+               "” and go back to the copy in patches/patches.js?")) return;
+  delete store.patches[patch.id];
+  showPatch(getPatch(patch.id));
+  save(); paintList(); render(); setTimeout(fitWidth, 0);
+  flash("Reverted to the file.");
+});
+document.getElementById("bdel").addEventListener("click", function(){
+  if (fromFile(patch.id)){
+    msg("warn", "“"+(patch.name||"Untitled patch")+"” lives in patches/patches.js. "+
+                "Delete it there, or export a file without it.");
+    return;
+  }
+  if (patchIds().length < 2){ msg("warn","That's the only patch, so there's nothing to fall back to."); return; }
+  if (!confirm("Delete “"+(patch.name||"Untitled patch")+"”?")) return;
+  var gone = patch.id;
+  delete store.patches[gone];
+  showPatch(getPatch(patchIds()[0]));
+  save(); paintList(); render();
+});
+document.getElementById("btidy").addEventListener("click", function(){
+  pendingLayout = true; render(); save(); setTimeout(fitWidth, 0);
+});
+
+/* ------------------------------------------------------- export and import --- */
+/*
+   Two export shapes, doing two different jobs, and it's worth being clear which
+   is which because they look similar.
+
+     patches.js   ALL your patches, in the app's own shape, meant to be dropped
+                  back into patches/ and read at boot. This is the durable copy.
+     patch JSON   ONE patch, plus a derived `cables` array for other tools to
+                  read. This is for sending someone a patch.
+
+   Both carry the id, so both can be imported without duplicating. Neither
+   carries the derived diagram, because `src` is the source of truth and
+   anything else would be a second copy to drift.
+*/
+function patchOut(p){
+  var o = { id: p.id, name: p.name || "Untitled patch", src: p.src || "" };
+  if (p.notes) o.notes = p.notes;
+  if (p.pos && Object.keys(p.pos).length) o.pos = p.pos;
+  return o;
+}
+/* The export carries the date it was written.
+
+   That is for one failure that only happens once the app is hosted: a browser
+   or a CDN caches patches/patches.js, you upload a new one, and the page keeps
+   loading the old copy. Work appears to have vanished, and nothing on screen
+   can tell you why. A visible date turns that into an obvious answer. */
+/* When the loaded patches/patches.js was written, if it says. */
+function fileStamp(){
+  var f = (window.PATCH_FILES || [])[0];
+  return f && f.exported ? f.exported : null;
+}
+
+function exportSource(){
+  var list = allPatches().map(patchOut);
+  return [
+    "// Your patches, written by Patching.",
+    "// Drop this in as patches/patches.js. index.html reads it automatically.",
+    "//",
+    "// Anything you then change in the app is kept in browser storage and",
+    "// overrides what's here, matched by id. File → Revert to file throws the",
+    "// change away and brings this copy back. Nothing here is ever written by",
+    "// the app, so it stays the reference copy.",
+    "",
+    "window.PATCH_FILES = window.PATCH_FILES || [];",
+    "window.PATCH_FILES.push({",
+    ' id: "patches",',
+    ' name: "My patches",',
+    ' exported: "' + new Date().toISOString().slice(0,16).replace("T", " ") + '",',
+    " patches: " + JSON.stringify(list, null, 1),
+    "});",
+    ""
+  ].join("\n");
+}
+
+document.getElementById("ball").addEventListener("click", function(){
+  save();
+  var src = exportSource(), n = allPatches().length;
+  openSheet(
+    '<h3>Export all patches</h3>'+
+    '<div style="color:var(--dim);margin-bottom:10px">'+
+      'Save it as <span class="mono">patches/patches.js</span>. Patching reads that file at '+
+      'boot, so there is nothing else to set up.<br><br>'+
+      (STORAGE_OK
+        ? '<b>Your patches already work.</b> They are in this browser right now.<br><br>'+
+          '<b>Exporting is how you keep them.</b> Browser storage is one browser on one '+
+          'machine, and clearing your browsing data takes it with it. The file survives that, '+
+          'moves to another computer, and can go in a repo.'
+        : '<b style="color:var(--bad)">This browser is not storing your patches.</b> Firefox '+
+          'refuses local storage on <span class="mono">file://</span> pages, so everything here '+
+          'works until you close the tab and then it is gone.<br><br>'+
+          '<b>Exporting is the only way to keep any of it.</b> Or serve the folder over '+
+          '<span class="mono">http://localhost</span>, which avoids the problem entirely.')+
+      '<br><br>Dropping this back in doesn\'t duplicate anything: each patch carries its id, '+
+      'so the file becomes the baseline underneath the copy you already had.'+
+      (fileStamp()
+        ? '<br><br><b>The file loaded right now was exported '+esc(fileStamp())+'.</b> '+
+          'If you have uploaded a newer one and that date has not moved, you are being served a '+
+          'cached copy. Hard refresh, or add a query to the script tag.'
+        : '')+
+    '</div>'+
+    '<div class="row">'+
+      '<button id="dlall" class="primary">Download patches.js</button>'+
+      '<button id="cpall">Copy</button>'+
+    '</div>'+
+    '<div style="color:var(--dimmer);margin:10px 0 4px">'+n+' patch'+(n===1?'':'es')+'</div>'+
+    '<textarea readonly id="allbox"></textarea>'
+  );
+  document.getElementById("allbox").value = src;
+  document.getElementById("dlall").onclick = function(){ download("patches.js", src); };
+  document.getElementById("cpall").onclick = function(){ copy(src, "patches.js copied."); };
+});
+
+document.getElementById("bjson").addEventListener("click", function(){
+  save();
+  var out = patchOut(patch);
+  out.cables = parsed.cables.map(function(c){
+    var o = { from: c.from.key+":"+c.from.jack, to: c.to.key+":"+c.to.jack };
+    var s = cableSig(c); if (c.sig || s === null || s === "multi") o.sig = c.sig || "multi";
+    if (c.note) o.note = c.note;
+    return o;
+  });
+  download((slug(patch.name)||"patch")+".json", JSON.stringify(out, null, 2));
+});
+document.getElementById("bimport").addEventListener("click", function(){
+  document.getElementById("file").click();
+});
+document.getElementById("file").addEventListener("change", function(){
+  readImport(this.files[0]); this.value = "";
+});
+
+/* ONE import command, because "bring this in" is one intention. Which format
+   the file happens to be is our problem, not something the user should have to
+   answer before they can pick a file — and it's a question they often can't
+   answer anyway about a file someone sent them.
+
+   This replaces three separate routes: a picker in the export sheet, a picker
+   in the PatchBook sheet, and the menu item. The first two were inherited from
+   modules.html, where the sheet genuinely is the only way in. Here it wasn't,
+   and one of them sat under Share, which is supposed to be outbound only. */
+function sniff(txt, name){
+  var n = String(name || "").toLowerCase();
+  if (/^\s*[\[{]/.test(txt)) return "json";
+  if (/window\.PATCH_FILES|patches:\s*\[/.test(txt)) return "js";
+  if (/\.txt$/.test(n)) return "patchbook";
+  /* Their markup is lines of connections, ours is too. Either way fromPatchBook
+     reads it, since our own syntax is a superset. */
+  return "patchbook";
+}
+function readImport(f){
+  if (!f) return;
+  var r = new FileReader();
+  r.onload = function(){
+    var kind = sniff(r.result, f.name);
+    if (kind === "patchbook") return importPatchBook(r.result, f.name);
+    var list;
+    try { list = parseImport(r.result); }
+    catch(e){ msg("err", "That didn't parse as a patch file: " + e.message); closeSheet(); return; }
+    if (!list.length){ msg("warn", "No patches in that file."); closeSheet(); return; }
+    offerImport(list, f.name);
+  };
+  r.readAsText(f);
+}
+
+/* PatchBook comes in as one patch and always as a new one: their format has no
+   id, so there's nothing to match on and nothing that could collide. */
+function importPatchBook(txt, fname){
+  var res = fromPatchBook(txt);
+  doImport([{ id:null, name:(fname || "Imported").replace(/\.txt$/i, ""),
+              src:res.src, notes:"", pos:{} }], "copy");
+  var q = res.report, notes = [];
+  function uniq(a){ var s={},o=[]; a.forEach(function(x){ if(!s[x]){s[x]=1;o.push(x);} }); return o; }
+  if (q.unmatched.length) notes.push('<div class="msg warn"><b>'+uniq(q.unmatched).length+
+    ' module name'+(uniq(q.unmatched).length===1?'':'s')+' not in your rack:</b> '+esc(uniq(q.unmatched).join(", "))+
+    '. Those lines are commented out. Swap in a generic such as <span class="mono">vco</span> or <span class="mono">vcf</span>.</div>');
+  if (q.unmatchedJacks.length) notes.push('<div class="msg warn"><b>'+uniq(q.unmatchedJacks).length+
+    ' jack label'+(uniq(q.unmatchedJacks).length===1?'':'s')+' didn\'t resolve:</b> '+esc(uniq(q.unmatchedJacks).slice(0,8).join(", "))+'</div>');
+  if (q.ambiguous.length) notes.push('<div class="msg warn"><b>Ambiguous labels:</b> '+esc(uniq(q.ambiguous).join("; "))+'</div>');
+  if (q.triggers) notes.push('<div class="msg warn"><b>'+q.triggers+' trigger connection'+
+    (q.triggers===1?'':'s')+'</b> came in as <span class="mono">gate</span>, since we don\'t split the two.</div>');
+  if (notes.length) document.getElementById("msgs").innerHTML = notes.join("") +
+    document.getElementById("msgs").innerHTML;
+  flash("Imported "+q.lines+" connections.");
+}
+function parseImport(txt){
+  var j = null;
+  if (/^\s*[\[{]/.test(txt)) j = JSON.parse(txt);
+  else {
+    var m = txt.match(/patches:\s*(\[[\s\S]*?\])\s*\n\}\);/);
+    if (!m) throw new Error("no patches found");
+    j = JSON.parse(m[1]);
+  }
+  var arr = Array.isArray(j) ? j : (j.patches || [j]);
+  return arr.filter(function(p){ return p && (p.src || p.cables); }).map(function(p){
+    return {
+      id: p.id || null,
+      name: p.name || "Imported patch",
+      notes: p.notes || "",
+      pos: p.pos || {},
+      /* Cables-only files, which is what other tools would produce, are turned
+         back into source. src wins where both are present. */
+      src: p.src || (p.cables||[]).map(function(c){
+        return c.from + " -> " + c.to + (c.sig ? " ["+c.sig+"]" : "") + (c.note ? ' "'+c.note+'"' : "");
+      }).join("\n")
+    };
+  });
+}
+
+/* An id that already exists is genuinely ambiguous: it's your own export coming
+   home, or it's someone else's patch that happens to collide. Guessing either
+   way loses work, so it asks once for the whole file rather than once per
+   patch. */
+function offerImport(list, fname){
+  var clash = list.filter(function(p){ return p.id && (store.patches[p.id] || FILEP[p.id]); });
+  if (!clash.length) return doImport(list, "copy");
+
+  var names = clash.slice(0, 6).map(function(p){
+    return "<li>" + esc(getPatch(p.id).name || "Untitled") + "</li>";
+  }).join("");
+  openSheet(
+    '<h3>Already here</h3>'+
+    '<div style="color:var(--dim);margin-bottom:10px">'+
+      esc(fname || "That file")+' has '+list.length+' patch'+(list.length===1?'':'es')+', and '+
+      clash.length+' of them '+(clash.length===1?'has':'have')+' the same id as '+
+      (clash.length===1?'a patch':'patches')+' you already have.<br><br>'+
+      '<b>Update</b> if this is your own export coming back. <b>Add copies</b> if it came from '+
+      'someone else and you want to keep both.'+
+      '<ul style="margin:8px 0 0 18px">'+names+
+      (clash.length > 6 ? '<li>and '+(clash.length-6)+' more</li>' : '')+'</ul>'+
+    '</div>'+
+    '<div class="row">'+
+      '<button id="impupd" class="primary">Update '+clash.length+'</button>'+
+      '<button id="impcopy">Add as copies</button>'+
+      '<button id="impskip">Skip '+(clash.length===1?'it':'them')+'</button>'+
+    '</div>'
+  );
+  document.getElementById("impupd").onclick  = function(){ doImport(list, "update"); };
+  document.getElementById("impcopy").onclick = function(){ doImport(list, "copy"); };
+  document.getElementById("impskip").onclick = function(){ doImport(list, "skip"); };
+}
+
+function doImport(list, mode){
+  save();
+  var added = 0, updated = 0, skipped = 0, last = null;
+  list.forEach(function(p){
+    var exists = p.id && (store.patches[p.id] || FILEP[p.id]);
+    if (exists && mode === "skip"){ skipped++; return; }
+    var np = (exists && mode === "update") ? clonePatch(p) : (function(){
+      var c = clonePatch(p); c.id = newPatch().id;
+      if (exists) c.name = uniquePatchName(p.name || "Imported patch");
+      return c;
+    })();
+    store.patches[np.id] = np;
+    if (exists && mode === "update") updated++; else added++;
+    last = np;
+  });
+  if (last) showPatch(last);
+  save(); closeSheet(); paintList(); render(); setTimeout(fitWidth, 0);
+  var bits = [];
+  if (added)   bits.push(added + " added");
+  if (updated) bits.push(updated + " updated");
+  if (skipped) bits.push(skipped + " skipped");
+  flash(bits.join(", ") + ".");
+}
+document.getElementById("bpb").addEventListener("click", function(){
+  var pb = toPatchBook();
+  var multi = (view.allCables||[]).filter(function(c){ return (cableSig(c)||"multi") === "multi"; }).length;
+  openSheet(
+    '<h3>PatchBook</h3>'+
+    '<div style="color:var(--dim);margin-bottom:10px">'+
+      'The <a href="https://github.com/SpektroAudio/PatchBook" target="_blank" rel="noopener" style="color:var(--accent)">Spektro Audio PatchBook</a> '+
+      'markup, for sharing patches with people who don\'t have your rack data. Five of our six signal types '+
+      'map onto their arrows exactly. Two things to know: their <span class="mono">t&gt;</span> (trigger) '+
+      'becomes our <span class="mono">gate</span> on the way in, and our <span class="mono">multi</span> has no '+
+      'arrow so it exports as <span class="mono">&gt;&gt;</span>.'+
+      (multi ? ' <b style="color:var(--warn)">'+multi+' cable'+(multi===1?'':'s')+' here '+
+        (multi===1?'is':'are')+' multi and will lose '+(multi===1?'its':'their')+' type.</b>' : '')+
+    '</div>'+
+    '<div class="row">'+
+      '<button id="pbdl" class="primary">Download .txt</button>'+
+      '<button id="pbcp">Copy</button>'+
+    '</div>'+
+    '<div style="color:var(--dimmer);margin-top:10px;font-size:12px">'+
+      'Reading one in is <b>File → Import…</b>, along with every other format.'+
+    '</div>'+
+    '<textarea readonly id="pbbox" style="margin-top:10px"></textarea>'
+  );
+  document.getElementById("pbbox").value = pb;
+  document.getElementById("pbdl").onclick = function(){ download((slug(patch.name)||"patch")+".txt", pb); };
+  document.getElementById("pbcp").onclick = function(){ copy(pb, "PatchBook markup copied."); };
+});
+
+document.getElementById("bhelp").addEventListener("click", function(){
+  openSheet(
+    '<h3>Patch syntax</h3>'+
+    '<div class="keys" style="grid-template-columns:auto 1fr">'+
+      '<div class="mono">module:jack -&gt; module:jack</div><div>a cable. Type comes from the source jack.</div>'+
+      '<div class="mono">module:jack to module:jack</div><div>the same thing in words, for when you\'d rather not reach for symbols. Only read as a cable when the line has no arrow on it.</div>'+
+      '<div class="mono">a -&gt; b -&gt; c</div><div>a chain. Two cables. The middle module leaves by its <i>output</i>, not the jack it was entered on.</div>'+
+      '<div class="mono">a -&gt; b and c</div><div>one output into two inputs. <span class="mono">,</span> works too. Last step of the line only.</div>'+
+      '<div class="mono">vcf</div><div>a bare module name, when the jack is obvious.</div>'+
+      '<div class="mono">delay:in:wet</div><div>mid-chain only: arrive at <span class="mono">IN</span>, leave by <span class="mono">WET</span>.</div>'+
+      '<div class="mono">Module Name (Port Label)</div><div>PatchBook form. Works anywhere the id form does, mixed freely on any line. Validated just as hard.</div>'+
+      '<div class="mono">... [audio]</div><div>force the type. Overrides everything.</div>'+
+      '<div class="mono">... "note"</div><div>label the cable on the diagram.</div>'+
+      '<div class="mono">vco#lead</div><div>a named instance. <span class="mono">vco#lead</span> and <span class="mono">vco#drone</span> are two boxes, and the name is drawn on each. Says what a module is <i>for</i>, not which number it is.</div>'+
+      '<div class="mono">vco#1 / vco#2</div><div>two of the same module, when there is nothing to say about the job either is doing.</div>'+
+      '<div class="mono"># or //</div><div>comment. Only after a space, so <span class="mono">vco#lead</span> is safe.</div>'+
+    '</div>'+
+    '<h3 style="margin-top:16px">Sections and roles</h3>'+
+    '<div style="color:var(--dim);line-height:1.6;max-width:62ch">'+
+      'A <b>section</b> groups part of a patch. <span class="mono">DRONE:</span> and everything '+
+      'below it belongs to that section. A voice, but equally modulation, clock or output.<br><br>'+
+      'A <b>role</b> is what one module is there for: <span class="mono">vco#lead</span>, '+
+      '<span class="mono">lfo#drift</span>. Two boxes, each captioned.<br><br>'+
+      'The section dropdown on the toolbar fades everything outside the section you pick. It '+
+      'never removes anything, so the layout does not move. A module reached by two sections '+
+      'stays prominent in both.'+
+    '</div>'+
+    '<pre class="mono" style="color:var(--dim);font-size:11.5px">LEAD:\n  seq:cv p&gt; vco#lead:voct\n  vco#lead:saw -&gt; vcf#lead:in\n\nDRONE:\n  vco#drone:saw -&gt; vcf#drone:in</pre>'+
+    '<h3 style="margin-top:16px">Typed arrows</h3>'+
+    '<div style="color:var(--dim)">Borrowed from PatchBook, so a line reads the same in both: '+
+      '<span class="mono">&gt;&gt;</span> cv, <span class="mono">p&gt;</span> pitch, '+
+      '<span class="mono">g&gt;</span> gate, <span class="mono">t&gt;</span> trigger (becomes gate), '+
+      '<span class="mono">c&gt;</span> clock.<br><br>'+
+      '<b>One difference from PatchBook.</b> There <span class="mono">-&gt;</span> means audio. Here it '+
+      'stays neutral and lets the source jack decide, which is more use when the source is a VCA '+
+      'or a mult. The importer turns their <span class="mono">-&gt;</span> into an explicit '+
+      '<span class="mono">[audio]</span>, so nothing is lost.</div>'+
+    '<h3 style="margin-top:16px">Chains, and feeding two places at once</h3>'+
+    '<div style="color:var(--dim)">A line can carry more than one cable, so a path reads as a '+
+      'sentence rather than a list.</div>'+
+    '<pre class="mono" style="color:var(--dim);font-size:11.5px">'+
+      'vco:saw -&gt; vcf:in -&gt; vca:in -&gt; out:in-l\n'+
+      'env:out &gt;&gt; vca:cv and vcf:cutoff</pre>'+
+    '<div style="color:var(--dim)">The first is three cables. A module in the middle is written '+
+      'once but does two jobs: destination of the cable before it, source of the one after. Those '+
+      'are <b>different jacks</b>. It leaves by its output, not the input you named. Each step '+
+      'keeps its own arrow, so the type can change along the way: '+
+      '<span class="mono">seq:cv p&gt; vcf:cutoff -&gt; vca</span>.<br><br>'+
+      'A middle module can name <b>both</b> its jacks, <span class="mono">module:in:out</span>. '+
+      'That is what makes a chain usable on anything with more than one output, like a delay with dry '+
+      'and wet, a filter with LP, BP and HP:<br><br>'+
+      '<span class="mono">vco:saw -&gt; vcf:in:bp -&gt; delay:in:wet -&gt; vca -&gt; out</span><br><br>'+
+      'Without it, those modules could only ever sit at the end of a line. It means nothing at the '+
+      'start or the end, where an endpoint only has one job, so it is an error there rather than '+
+      'being silently dropped.<br><br>'+
+      'You can drop a jack entirely when the module has an obvious one: a jack actually called '+
+      '<span class="mono">out</span> or <span class="mono">in</span>, or only one facing that way. '+
+      'Where there is no obvious answer it asks, and lists the candidates.<br><br>'+
+      '<span class="mono">and</span> only works on the last step. '+
+      '<span class="mono">a -&gt; b and c -&gt; d</span> reads two ways and neither is obviously '+
+      'right, so it errors instead of picking one.</div>'+
+    '<h3 style="margin-top:16px">Moving modules</h3>'+
+    '<div class="keys" style="grid-template-columns:auto 1fr">'+
+      '<div>Drag a module</div><div>moves it. Snaps to a 10px grid.</div>'+
+      '<div>Shift-click</div><div>adds a module to the selection, or takes it out.</div>'+
+      '<div>Drag on empty canvas</div><div>rubber-band. Anything the box touches is selected. Hold shift to add to what is already picked.</div>'+
+      '<div>Drag a selected module</div><div>moves the whole selection together.</div>'+
+      '<div>Esc</div><div>deselect.</div>'+
+    '</div>'+
+    '<div style="color:var(--dim);margin-top:8px;max-width:62ch">Positions are part of the patch and '+
+      'save as you go. There is no undo, so <b>Auto layout</b> is the way back.</div>'+
+    '<h3 style="margin-top:16px">Notes</h3>'+
+    '<div style="color:var(--dim)">The <b>Notes</b> box under the editor is for prose about the '+
+      'patch. It prints in the footer under the cable key. What it is for, how it behaves, what '+
+      'to try next time.<br><br>'+
+      'Notes belong to the patch, so they go with the JSON export and the SVG. '+
+      '<b>Comments are a different thing and stay private.</b> Anything after '+
+      '<span class="mono">#</span> or <span class="mono">//</span> is stripped before the diagram '+
+      'is built, which is what makes a comment safe to scribble in.</div>'+
+    '<h3 style="margin-top:16px">Parameters</h3>'+
+    '<div style="color:var(--dim)">Knob settings, drawn inside the module box. Cables are only '+
+      'half a patch. If you can\'t rebuild it from the diagram, it isn\'t documented. Single line '+
+      'or block, both fine.</div>'+
+    '<pre class="mono" style="color:var(--dim);font-size:11.5px">* vcf: cutoff = 40% | resonance = 3 o\'clock\n\n* delay:\n  | time = 3:8\n  | feedback = 45%\n  | mix = 30%</pre>'+
+    '<div style="color:var(--dim)">A module with parameters and no cables still gets a box, so '+
+      'you can record settings for something that isn\'t patched into anything.</div>'
+  );
+});
+
+/* On the bar as the primary button, and repeated in the Share menu, because
+   the button is the shortcut and the menu is where you look when you don't
+   already know the shortcut exists. Standard, and it costs one line. */
+/* Always light. A diagram is going to a printer or a forum post, and neither
+   wants white-on-dark. Render light, serialise, put the interface back. */
+function lightSVG(){
+  var was = THEME;
+  if (was !== "light"){ applyTheme("light"); render(); }
+  var svg = document.getElementById("diagram");
+  var s = new XMLSerializer().serializeToString(svg);
+  if (s.indexOf("xmlns=") === -1) s = s.replace("<svg", '<svg xmlns="'+SVGNS+'"');
+  var box = { w: +svg.getAttribute("width"), h: +svg.getAttribute("height") };
+  if (was !== "light"){ applyTheme(was); render(); }
+  return { src: s, w: box.w, h: box.h };
+}
+
+function exportSVG(){
+  var g = lightSVG();
+  download((slug(patch.name)||"patch")+".svg", '<?xml version="1.0" encoding="UTF-8"?>\n'+g.src);
+}
+
+/* PNG, because SVG is useless almost everywhere a diagram actually goes. Most
+   forums reject it and no social platform will render it.
+
+   Drawn at 2x so it stays sharp on a retina screen and survives being scaled
+   down by a forum. The SVG goes in as a data URL rather than a blob URL: a blob
+   is a different origin as far as the canvas is concerned, which taints it and
+   makes toBlob throw. Everything is inline and there are no external images, so
+   there is nothing else to wait for. */
+var PNG_SCALE = 2;
+function exportPNG(){
+  var g = lightSVG();
+  var img = new Image();
+  img.onload = function(){
+    var c = document.createElement("canvas");
+    c.width  = Math.round(g.w * PNG_SCALE);
+    c.height = Math.round(g.h * PNG_SCALE);
+    var ctx = c.getContext("2d");
+    ctx.fillStyle = "#ffffff";                 /* PNG alpha would go black on dark forums */
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    c.toBlob(function(blob){
+      if (!blob) return msg("err", "Couldn't make a PNG. Export SVG instead.");
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = (slug(patch.name)||"patch")+".png";
+      a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+    }, "image/png");
+  };
+  img.onerror = function(){ msg("err", "Couldn't render the diagram to PNG. Export SVG instead."); };
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(g.src);
+}
+document.getElementById("btheme").addEventListener("click", function(){
+  applyTheme(THEME === "dark" ? "light" : "dark");
+  try { localStorage.setItem(LS_THEME, THEME); } catch(e){}
+  render();   /* the diagram is drawn in JS, so CSS alone cannot restyle it */
+});
+
+document.getElementById("bsvg").addEventListener("click", exportSVG);
+document.getElementById("bsvgm").addEventListener("click", exportSVG);
+document.getElementById("bpng").addEventListener("click", exportPNG);
+/* ---------------------------------------------------------------- PatchBook --- */
+/*
+   Interop with the Spektro Audio PatchBook markup, which uses free-text
+   `Module (Port Label)` rather than validated ids. Converting in either direction
+   is close to lossless: five of our six signal types map exactly onto their
+   arrows. The two gaps, both flagged when they happen:
+
+     ours `multi`   -> no PatchBook arrow. Exports as `>>` (their default) and the
+                      real type is lost.
+     their `t>`     -> our `gate`. We never split trigger from gate.
+
+   Their `->` means audio; ours is neutral. The importer therefore writes an
+   explicit [audio] tag rather than assuming our `->` means the same thing.
+*/
+var PB_ARROW = { audio:"->", cv:">>", pitch:"p>", gate:"g>", clock:"c>", multi:">>" };
+
+function toPatchBook(){
+  var lines = ["// Exported from the modular reference patch tool",
+               "// " + (patch.name || "Untitled patch"), ""];
+  var byVoice = {}, order = [];
+  (view.allCables || parsed.cables).forEach(function(c){
+    var v = c.voice || "PATCH";
+    if (!byVoice[v]){ byVoice[v] = []; order.push(v); }
+    byVoice[v].push(c);
+  });
+  order.forEach(function(v){
+    lines.push(v.toUpperCase() + ":");
+    byVoice[v].forEach(function(c){
+      var a = jack(c.from.mod, c.from.jack), b = jack(c.to.mod, c.to.jack);
+      var sig = cableSig(c) || "multi";
+      lines.push("\t- " + byId(c.from.mod).name + (c.from.inst ? " " + c.from.inst : "") +
+        " (" + (a ? a.label : c.from.jack) + ") " + (PB_ARROW[sig] || ">>") + " " +
+        byId(c.to.mod).name + (c.to.inst ? " " + c.to.inst : "") +
+        " (" + (b ? b.label : c.to.jack) + ")" +
+        (c.note ? "   // " + c.note : ""));
+    });
+    lines.push("");
+  });
+  Object.keys(parsed.params).forEach(function(k){
+    var m = byId(k.replace(/#[a-z0-9\-]+$/i, ""));
+    lines.push("\t* " + (m ? m.name : k) + ": " +
+      parsed.params[k].map(function(p){ return p.name + " = " + p.value; }).join(" | "));
+  });
+  return lines.join("\n") + "\n";
+}
+
+/* Resolve a PatchBook `Module (Label)` pair back to our ids. Label matching is
+   scoped by direction, which is what makes it work — 98% of our labels are
+   already unique inside their module, and knowing which end of the arrow you're
+   on settles nearly all of the rest. */
+function pbResolve(modName, portLabel, dir, report){
+  var n = modName.trim().toLowerCase().replace(/\s+\d+$/, function(s){ return s; });
+  var inst = null;
+  var im = n.match(/^(.*?)\s+(\d+)$/);
+  var cands = allModules().filter(function(m){
+    return m.name.toLowerCase() === n || m.id === n;
+  });
+  if (!cands.length && im){
+    inst = +im[2];
+    cands = allModules().filter(function(m){
+      return m.name.toLowerCase() === im[1] || m.id === im[1];
+    });
+  }
+  if (!cands.length){
+    report.unmatched.push(modName.trim());
+    return null;
+  }
+  var mod = cands[0];
+  var js = (jacksFor(mod.id) || []).filter(function(j){
+    return j.dir === dir || j.dir === "both";
+  });
+  var pl = portLabel.trim().toLowerCase();
+  var hit = js.filter(function(j){ return j.label.toLowerCase() === pl; });
+  if (!hit.length) hit = js.filter(function(j){ return j.id === pl.replace(/\s+/g,"-"); });
+  if (!hit.length) hit = js.filter(function(j){ return j.label.toLowerCase().replace(/[^a-z0-9]/g,"") === pl.replace(/[^a-z0-9]/g,""); });
+  if (!hit.length){
+    report.unmatchedJacks.push(mod.id + " (" + portLabel.trim() + ")");
+    return null;
+  }
+  if (hit.length > 1) report.ambiguous.push(mod.id + " (" + portLabel.trim() + ") -> " +
+    hit.map(function(j){ return j.id; }).join(" / "));
+  return mod.id + (inst ? "#" + inst : "") + ":" + hit[0].id;
+}
+
+function fromPatchBook(text){
+  var PB = { "->":"audio", ">>":"cv", "p>":"pitch", "g>":"gate", "t>":"gate", "c>":"clock" };
+  var report = { unmatched:[], unmatchedJacks:[], ambiguous:[], triggers:0, lines:0 };
+  var outLines = [], voice = "";
+  text.split(/\n/).forEach(function(raw){
+    var line = raw.trim();
+    if (!line) { return; }
+    if (/^\/\//.test(line)){ outLines.push("# " + line.replace(/^\/\/\s?/, "")); return; }
+    var cm = line.match(/^-\s*(.+?)\s*\((.+?)\)\s*(->|>>|[a-z]>)\s*(.+?)\s*\((.+?)\)\s*(\[.*\])?$/);
+    if (cm){
+      report.lines++;
+      if (cm[3] === "t>") report.triggers++;
+      var from = pbResolve(cm[1], cm[2], "out", report);
+      var to   = pbResolve(cm[4], cm[5], "in",  report);
+      if (from && to)
+        outLines.push(from + " -> " + to + " [" + (PB[cm[3]] || "cv") + "]");
+      else
+        outLines.push("# UNRESOLVED: " + line);
+      return;
+    }
+    var vm = line.match(/^([^*|\-].*):$/);
+    if (vm && !/\(/.test(line)){ voice = vm[1].trim(); outLines.push("", voice + ":"); return; }
+    var pmm = line.match(/^\*\s*([^:]+):\s*(.*)$/);
+    if (pmm){
+      var mm = allModules().filter(function(m){
+        return m.name.toLowerCase() === pmm[1].trim().toLowerCase() || m.id === pmm[1].trim().toLowerCase();
+      })[0];
+      outLines.push("* " + (mm ? mm.id : pmm[1].trim()) + ":" + (pmm[2] ? " " + pmm[2] : ""));
+      if (!mm) report.unmatched.push(pmm[1].trim());
+      return;
+    }
+    if (/^\|/.test(line)){ outLines.push(line); return; }
+  });
+  return { src: outLines.join("\n").replace(/^\n+/, ""), report: report };
+}
+
+function slug(s){
+  return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+}
+/* ---------------------------------------------------------------- overlay --- */
+
+function openSheet(html){
+  document.getElementById("sheet").innerHTML = html;
+  document.getElementById("veil").classList.add("on");
+}
+function closeSheet(){ document.getElementById("veil").classList.remove("on"); }
+document.getElementById("veil").addEventListener("click", function(ev){
+  if (ev.target.id === "veil") closeSheet();
+});
+document.addEventListener("keydown", function(ev){
+  /* Escape does ONE thing per press, most-nested first: close a dialog, else
+     close a menu, else leave full-width. Marking the event is how later handlers
+     know it's already been dealt with. */
+  if (ev.key === "Escape" && document.getElementById("veil").classList.contains("on")){
+    closeSheet(); ev.__escHandled = true;
+  }
+});
+
+function copy(text, message){
+  if (navigator.clipboard && window.isSecureContext){
+    navigator.clipboard.writeText(text).then(function(){ flash(message); },
+      function(){ fallbackCopy(text, message); });
+  } else fallbackCopy(text, message);
+}
+function fallbackCopy(text, message){
+  var ta = document.createElement("textarea");
+  ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); flash(message); }
+  catch(e){ flash("Copy blocked. Use Download instead.", true); }
+  document.body.removeChild(ta);
+}
+function flash(text, bad){
+  var el = document.getElementById("stat");
+  el.innerHTML = '<span style="color:'+(bad?"var(--bad)":"var(--ok)")+'">'+esc(text)+'</span>';
+  setTimeout(updateStat, 2200);
+}
+
+function download(name, text){
+  var blob = new Blob([text], {type:"text/plain"});
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+}
+
+/* --------------------------------------------------------------- examples --- */
+/*
+   Loading an example always creates a NEW patch, so it can't overwrite what
+   you were working on.
+*/
+var EXAMPLES = window.PATCH_EXAMPLES || [];
+
+/* A name not already taken, so two different examples never collide and an
+   edited copy is visibly distinct from the original. */
+function uniquePatchName(base){
+  var taken = {}, n = 2, name = base;
+  allPatches().forEach(function(p){ taken[p.name] = 1; });
+  while (taken[name]) name = base + " " + (n++);
+  return name;
+}
+
+function loadExample(i){
+  var ex = EXAMPLES[i]; if (!ex) return;
+  save();
+
+  /* Three rules, in order, so repeatedly opening an example doesn't fill the
+     patch list with copies of itself:
+
+       1. an untouched copy already exists  ->  just go to it
+       2. the current patch is empty        ->  load into it
+       3. otherwise                          ->  new patch, name made unique
+
+     Rule 1 keys on the source text being byte-identical to the example, so the
+     moment you change anything the patch stops matching and a fresh load makes
+     a new one instead. Your edits are never overwritten and never duplicated. */
+  var existing = null;
+  allPatches().forEach(function(p){ if (!existing && p.src === ex.src) existing = p; });
+  if (existing){
+    showPatch(existing);
+    save(); paintList(); render(); setTimeout(fitWidth, 0);
+    flash("Switched to your existing “" + existing.name + "”.");
+    return;
+  }
+
+  /* Reuse the current patch only when it's empty AND yours. Loading an example
+     over a patch that came from a file would shadow the file entry with an
+     example, which is not what "load into the blank one" meant. */
+  var blank = (!patch.src || !patch.src.trim()) && !fromFile(patch.id);
+  var target = blank ? patch : newPatch();
+  target.name = uniquePatchName(ex.name);
+  target.src = ex.src;
+  target.pos = {};              /* let it lay itself out */
+  store.patches[target.id] = target;
+  showPatch(target);
+  save(); paintList(); render();
+  setTimeout(fitWidth, 0);
+  flash(blank ? "Loaded “" + ex.name + "”."
+              : "Loaded “" + patch.name + "” as a new patch.");
+}
+
+function paintExamples(){
+  var host = document.getElementById("exmenu");
+  if (!host || !EXAMPLES.length) return;
+  host.innerHTML = '<hr><div class="lbl">Start from an example</div>' +
+    EXAMPLES.map(function(ex, i){
+      return '<button data-ex="'+i+'">'+esc(ex.name)+
+        (ex.about ? '<small>'+esc(ex.about)+'</small>' : '')+'</button>';
+    }).join("");
+  host.addEventListener("click", function(ev){
+    var b = ev.target.closest("[data-ex]");
+    if (b) loadExample(+b.dataset.ex);
+  });
+}
+
+/* ------------------------------------------------------------------ menus --- */
+/* Click to open, click anywhere else or press Escape to close, and opening one
+   closes the others. Menu items close the menu themselves so every handler
+   underneath stays exactly as it was. */
+function closeMenus(){
+  [].forEach.call(document.querySelectorAll(".menu.open"), function(m){ m.classList.remove("open"); });
+}
+document.addEventListener("click", function(ev){
+  var opener = ev.target.closest("[data-open]");
+  if (opener){
+    var m = opener.parentNode, wasOpen = m.classList.contains("open");
+    closeMenus();
+    if (!wasOpen) m.classList.add("open");
+    ev.stopPropagation();
+    return;
+  }
+  if (ev.target.closest(".dropdown")) { setTimeout(closeMenus, 0); return; }
+  closeMenus();
+});
+document.addEventListener("keydown", function(ev){
+  if (ev.key !== "Escape" || ev.__escHandled) return;
+  if (document.querySelector(".menu.open")){ closeMenus(); ev.__escHandled = true; }
+});
+
+/* ------------------------------------------------------------------ about --- */
+document.getElementById("babout").addEventListener("click", function(){
+  openSheet(
+    '<h3>Patching</h3>'+
+    '<div style="color:var(--ink2);line-height:1.65;max-width:58ch">'+
+      '<p style="margin-top:0"><b>Signal flow diagrams for modular synthesizers.</b></p>'+
+      '<p>Describe a patch in a simple language and it draws the flow chart. '+
+      'Save it, print it, share it, keep it.</p>'+
+      '<p>Inspired by '+
+      '<a href="https://github.com/SpektroAudio/PatchBook" target="_blank" rel="noopener">PatchBook</a>, '+
+      'and it reads and writes an extended version of that markup. Not affiliated with it.</p>'+
+      '<p>Comes with a library of generic modules and some of the more popular real ones. '+
+      'You can add your own.</p>'+
+      '<p style="color:var(--ink3);font-size:12px">No build step, no dependencies, no need for a server, but host it yourself if you like</p>'+
+    '</div>'+
+    '<div class="keys" style="margin-top:14px">'+
+      '<div style="color:var(--ink3)">Version</div><div>'+VERSION+'</div>'+
+      '<div style="color:var(--ink3)">Licence</div><div>MIT</div>'+
+      '<div style="color:var(--ink3)">Source</div>'+
+      '<div><a href="'+REPO+'" target="_blank" rel="noopener">github.com/ubertv/patching</a></div>'+
+    '</div>'+
+    '<div class="row"><button id="aboutclose" class="primary">Close</button></div>'
+  );
+  document.getElementById("aboutclose").onclick = closeSheet;
+});
+
+/* ---------------------------------------------------------------- layout --- */
+/*
+   Pane sizes and zoom are workspace state, not patch data. They belong to this
+   browser rather than to the diagram, so they get their own key and never touch
+   the patch file.
+*/
+var LS_UI = "patching-ui-v1";
+var ui = { sidebar:400, msgs:180, zoom:1, focus:"" };
+try { var u = JSON.parse(lsGet(LS_UI)); if (u) for (var k in u) ui[k] = u[k]; } catch(e){}
+function saveUI(){ try { localStorage.setItem(LS_UI, JSON.stringify(ui)); } catch(e){} }
+/* Full-width focus for either pane. One at a time, Escape restores, and the
+   choice persists — if you mostly read diagrams you shouldn't have to reclaim
+   the space every session. */
+var ICON_EXPAND = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">'+
+  '<path d="M6.5 2.5H2.5v4M9.5 2.5h4v4M6.5 13.5H2.5v-4M9.5 13.5h4v-4" fill="none" '+
+  'stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+var ICON_COLLAPSE = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">'+
+  '<path d="M2.5 6.5h4v-4M13.5 6.5h-4v-4M2.5 9.5h4v4M13.5 9.5h-4v4" fill="none" '+
+  'stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+
+function applyFocus(){
+  var left = document.getElementById("left"),
+      right = document.getElementById("right"),
+      hs = document.getElementById("hsplit"),
+      be = document.getElementById("focused"),
+      bc = document.getElementById("focusc");
+  left.style.display  = ui.focus === "canvas" ? "none" : "flex";
+  right.style.display = ui.focus === "editor" ? "none" : "flex";
+  hs.style.display    = ui.focus ? "none" : "block";
+  left.style.width    = ui.focus === "editor" ? "100%" : ui.sidebar + "px";
+  be.innerHTML = ui.focus === "editor" ? ICON_COLLAPSE : ICON_EXPAND;
+  bc.innerHTML = ui.focus === "canvas" ? ICON_COLLAPSE : ICON_EXPAND;
+  be.title = ui.focus === "editor" ? "Restore split view" : "Expand the editor (Esc to restore)";
+  bc.title = ui.focus === "canvas" ? "Restore split view" : "Expand the diagram (Esc to restore)";
+}
+function setFocus(which){
+  ui.focus = ui.focus === which ? "" : which;
+  applyFocus(); saveUI();
+  if (ui.focus !== "editor") setTimeout(fitWidth, 0);
+}
+document.getElementById("focused").addEventListener("click", function(){ setFocus("editor"); });
+document.getElementById("focusc").addEventListener("click", function(){ setFocus("canvas"); });
+document.addEventListener("keydown", function(ev){
+  if (ev.key !== "Escape" || ev.__escHandled || !selCount()) return;
+  clearSel(); render(); ev.__escHandled = true;
+});
+
+document.addEventListener("keydown", function(ev){
+  if (ev.key !== "Escape" || ev.__escHandled || !ui.focus) return;
+  ui.focus = ""; applyFocus(); saveUI(); setTimeout(fitWidth, 0);
+});
+
+function applyLayout(){
+  document.getElementById("msgs").style.height = ui.msgs + "px";
+  applyFocus();
+}
+
+/* One drag handle, two axes. Both clamp, so you can't drag a pane out of
+   existence and then wonder where the editor went. */
+function splitter(id, horizontal){
+  var el = document.getElementById(id), start = null;
+  el.addEventListener("mousedown", function(ev){
+    ev.preventDefault();
+    start = { x:ev.clientX, y:ev.clientY, sidebar:ui.sidebar, msgs:ui.msgs };
+    el.classList.add("dragging");
+    document.body.style.cursor = horizontal ? "col-resize" : "row-resize";
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  });
+  function move(ev){
+    if (!start) return;
+    if (horizontal)
+      ui.sidebar = Math.max(240, Math.min(window.innerWidth - 320,
+        start.sidebar + (ev.clientX - start.x)));
+    else
+      ui.msgs = Math.max(0, Math.min(window.innerHeight - 220,
+        start.msgs - (ev.clientY - start.y)));
+    applyLayout();
+  }
+  function up(){
+    document.removeEventListener("mousemove", move);
+    document.removeEventListener("mouseup", up);
+    el.classList.remove("dragging"); document.body.style.cursor = "";
+    start = null; saveUI();
+  }
+}
+splitter("hsplit", true);
+splitter("vsplit", false);
+
+/* Zoom scales the rendered box and leaves the viewBox alone, so text and strokes
+   stay vector-crisp rather than being scaled as a bitmap. */
+function applyZoom(){
+  var svg = document.getElementById("diagram");
+  if (!svg || !view.w) return;
+  svg.style.width  = Math.round(view.w * ui.zoom) + "px";
+  svg.style.height = Math.round(view.h * ui.zoom) + "px";
+  var lbl = document.getElementById("zoomlvl");
+  if (lbl) lbl.textContent = Math.round(ui.zoom * 100) + "%";
+}
+function setZoom(z){ ui.zoom = Math.max(0.2, Math.min(3, z)); applyZoom(); saveUI(); }
+function fitWidth(){
+  var pane = document.getElementById("right");
+  if (view.w) setZoom((pane.clientWidth - 46) / view.w);
+}
+document.getElementById("zin").addEventListener("click", function(){ setZoom(ui.zoom * 1.25); });
+document.getElementById("zout").addEventListener("click", function(){ setZoom(ui.zoom / 1.25); });
+document.getElementById("z100").addEventListener("click", function(){ setZoom(1); });
+document.getElementById("zfit").addEventListener("click", fitWidth);
+
+/* ---------------------------------------------------------------------- boot --- */
+
+if (!M.length){
+  document.body.innerHTML = '<div style="padding:30px;color:#e0605e">Couldn\'t load '+
+    '<span style="font-family:monospace">../data/modules.js</span>. This file has to live in '+
+    '<span style="font-family:monospace">tools/</span>.</div>';
+} else if (CLASH.length){
+  document.body.innerHTML = '<div style="padding:30px;color:#e0605e;max-width:640px;line-height:1.6">'+
+    '<b>Refusing to start.</b> These ids exist in both <span style="font-family:monospace">data/modules.js</span> '+
+    'and <span style="font-family:monospace">tools/generic-modules.js</span>: '+
+    '<span style="font-family:monospace">'+esc(CLASH.join(", "))+'</span>.<br><br>'+
+    'A generic placeholder shadowing a module you actually own would put wrong jacks in every patch '+
+    'that used it, silently. Rename the generic and reload.</div>';
+} else {
+  applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light");
+  var withJacks = M.filter(function(m){ return jacksFor(m.id) && !noJacks(m.id); }).length;
+  document.getElementById("src").value = patch.src || "";
+  document.getElementById("pname").value = patch.name || "";
+  document.getElementById("notes").value = patch.notes || "";
+  applyLayout();
+  paintExamples();
+  paintList();
+  render();
+  save();   /* so a freshly created patch survives a reload even if you never type */
+  if (!withJacks) msg("err", "No jack data found in modules.js or jack-seed.js. Run the annotator first.");
+}
+
+})();
+</script>
+</body>
+</html>

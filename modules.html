@@ -1,0 +1,1233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Modules · Patching</title>
+<link rel="icon" href="img/icon.svg" type="image/svg+xml">
+<link rel="icon" href="img/icon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<meta name="theme-color" content="#23272d">
+<script>
+/* Before first paint, or the page flashes light then snaps dark. Duplicated in
+   all three pages because each one has to stand alone off a filesystem. */
+(function(){
+  var t = null;
+  try { t = localStorage.getItem("patching-theme-v1"); } catch(e){}
+  if (t !== "dark" && t !== "light")
+    t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", t);
+})();
+</script>
+<style>
+:root{
+  /* Paper first, matching index.html. */
+  --paper:#f7f5f1; --surface:#fffefb; --surface2:#efece5; --mat:#e4e0d7;
+  --line:#dcd7cd; --line2:#c8c2b6;
+  --ink:#1f1d1a; --ink2:#5b5750; --ink3:#8f8a80;
+  --accent:#2f5fd0; --accent-soft:#e8eefb;
+  --ok:#1a6f4d; --warn:#8a6208; --bad:#a3312b;
+  --err-bg:#fdeceb; --err-ink:#7d2521;
+  --warn-bg:#fdf6e6; --warn-ink:#6b4d07;
+  --ok-bg:#eaf5ef;  --ok-ink:#155c40;
+  --shadow:rgba(31,29,26,.16); --shadow-soft:rgba(31,29,26,.07);
+  --sans:"SF Pro Text",-apple-system,"Inter","IBM Plex Sans","Segoe UI",Roboto,
+         "Helvetica Neue",Arial,sans-serif;
+  --mono:"SF Mono","JetBrains Mono","IBM Plex Mono","Cascadia Code",
+         ui-monospace,SFMono-Regular,Menlo,monospace;
+  /* Cable colours are chosen for print on white and are shared with the diagram,
+     so they don't change with the interface. */
+  --sig-audio:#b5322c; --sig-pitch:#2f5fd0; --sig-cv:#158f7d;
+  --sig-gate:#7b3fbf; --sig-clock:#a8760a; --sig-multi:#5f6873;
+}
+/* Dark. Same paper metaphor turned over. Set on <html> before first paint. */
+:root[data-theme="dark"]{
+  --paper:#17181a; --surface:#1e2023; --surface2:#282b2f; --mat:#0f1012;
+  --line:#33373c; --line2:#454a51;
+  --ink:#e8e6e1; --ink2:#a9a49c; --ink3:#7b766e;
+  --accent:#6c9bff; --accent-soft:#1c2740;
+  --ok:#4fbf8f; --warn:#d8a63c; --bad:#e2726b;
+  --err-bg:#2c1c1b;  --err-ink:#f0a49d;
+  --warn-bg:#2b2415; --warn-ink:#e3c079;
+  --ok-bg:#16271f;   --ok-ink:#7fd3ac;
+  --shadow:rgba(0,0,0,.55); --shadow-soft:rgba(0,0,0,.35);
+  --sig-audio:#e8736c; --sig-pitch:#7ba4ff; --sig-cv:#4fc4ac;
+  --sig-gate:#b48ae8; --sig-clock:#d9a63f; --sig-multi:#98a1ad;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0; background:var(--paper); color:var(--ink); overflow:hidden;
+  font:13.5px/1.55 var(--sans); -webkit-font-smoothing:antialiased;
+  display:flex; flex-direction:column}
+button,input,select,textarea{font:inherit; color:inherit}
+button{background:var(--surface); border:1px solid var(--line2); color:var(--ink);
+  border-radius:5px; padding:4px 9px; cursor:pointer}
+button:hover{background:var(--surface2); border-color:var(--line2)}
+button.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+button.primary:hover{filter:brightness(1.12)}
+button:disabled{opacity:.4; cursor:not-allowed}
+input[type=text],select,textarea{background:var(--surface); border:1px solid var(--line2);
+  border-radius:5px; padding:4px 7px; outline:none; width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft)}
+a{color:var(--accent)}
+.mono{font-family:var(--mono)}
+kbd{background:var(--surface2); border:1px solid var(--line2); border-bottom-width:2px;
+  border-radius:4px; padding:0 4px; font:11px/1.6 var(--mono); color:var(--ink2)}
+
+#top{display:flex; align-items:center; gap:10px; padding:8px 12px;
+  background:var(--surface); border-bottom:1px solid var(--line); flex:none}
+#brandmark{display:block; flex:none; border-radius:50%}
+#top h1{font-size:14px; margin:0; font-weight:600}
+#top h1 span{color:var(--ink3); font-weight:400}
+#top .spacer{flex:1}
+#stat{color:var(--ink2); font-size:12px}
+#stat b{color:var(--ink)}
+#nav{display:flex; gap:2px; background:var(--surface2); padding:2px;
+     border-radius:7px; border:1px solid var(--line)}
+#nav a{color:var(--ink2); text-decoration:none; padding:3px 12px; border-radius:5px;
+  font-size:12.5px; font-weight:500}
+#nav a:hover{color:var(--ink); background:var(--surface)}
+#nav a.active{background:var(--surface); color:var(--ink); font-weight:600;
+  box-shadow:0 1px 2px var(--shadow-soft)}
+.vrule{width:1px; height:20px; background:var(--line); flex:none; margin:0 3px}
+.menu{position:relative}
+.menu > button::after{content:"▾"; margin-left:5px; font-size:9px; opacity:.55;
+  position:relative; top:-1px}
+.menu.open > button{background:var(--surface2); border-color:var(--line2)}
+.dropdown{position:absolute; top:calc(100% + 5px); right:0; min-width:210px; z-index:40;
+  background:var(--surface); border:1px solid var(--line2); border-radius:7px;
+  padding:4px; display:none; box-shadow:0 10px 30px var(--shadow)}
+.menu.open .dropdown{display:block}
+/* Menus hang from the edge they sit nearest, so one on the left opens rightward
+   and one on the right opens leftward. Same rule as index.html. */
+.menu.left .dropdown{left:0; right:auto}
+.dropdown hr{border:none; border-top:1px solid var(--line); margin:4px 6px}
+.dropdown button,.dropdown a{display:block; width:100%; text-align:left; background:none;
+  border:none; padding:6px 10px; border-radius:5px; font-size:12.5px; color:var(--ink);
+  text-decoration:none; cursor:pointer}
+.dropdown button:hover,.dropdown a:hover{background:var(--accent-soft); color:var(--accent)}
+.dropdown small{display:block; color:var(--ink3); font-size:11px; margin-top:1px}
+
+#cols{display:flex; flex:1; min-height:0}
+#left{width:310px; flex:none; border-right:1px solid var(--line);
+  display:flex; flex-direction:column; min-height:0}
+#mid{flex:1; min-width:380px; overflow:auto; padding:14px 18px}
+#search{margin:8px; width:calc(100% - 16px)}
+#bulk{padding:0 8px 8px; display:flex; gap:6px; flex-wrap:wrap}
+#bulk button{font-size:11px; padding:2px 7px}
+#list{overflow:auto; flex:1}
+.grp{padding:10px 12px 4px; font-size:10px; text-transform:uppercase;
+  letter-spacing:.09em; color:var(--ink3); font-weight:650;
+  position:sticky; top:0; background:var(--paper); z-index:1;
+  display:flex; align-items:center; gap:8px}
+.grp span{flex:1}
+.grptog{font-size:9.5px; padding:0 5px; color:var(--ink3); border-color:var(--line);
+  font-variant-numeric:tabular-nums; letter-spacing:0}
+#chips-host{padding:0 8px 6px}
+#chips{display:flex; flex-wrap:wrap; gap:4px}
+.chip{font-size:11px; padding:2px 8px; border-radius:11px; color:var(--ink2);
+  border-color:var(--line)}
+.chip.on{background:var(--accent); border-color:var(--accent); color:#fff}
+.chip.mine{color:var(--accent); border-color:var(--accent-soft)}
+.chip.mine.on{color:#fff}
+.badge{font-size:9.5px; padding:0 4px; border-radius:3px; background:var(--surface2);
+  border:1px solid var(--line); color:var(--ink3)}
+.badge.mine{background:var(--accent-soft); border-color:var(--accent-soft); color:var(--accent)}
+.mrow{display:flex; align-items:center; gap:8px; padding:4px 12px; cursor:pointer;
+  border-left:2px solid transparent}
+.mrow:hover{background:var(--surface2)}
+.mrow.sel{background:var(--accent-soft); border-left-color:var(--accent)}
+.mrow.off .nm{color:var(--ink3)}
+.mrow .nm{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.mrow .nm small{display:block; color:var(--ink3); font-size:11px}
+.cnt{color:var(--ink3); font-size:11px; font-variant-numeric:tabular-nums}
+.sw{width:30px; height:17px; border-radius:9px; background:var(--line2); position:relative;
+  flex:none; transition:background .12s}
+.sw::after{content:""; position:absolute; top:2px; left:2px; width:13px; height:13px;
+  border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.2); transition:transform .12s,background .12s}
+.sw.on{background:var(--accent)}
+.sw.on::after{transform:translateX(13px); background:#fff}
+.tag{font-size:9.5px; padding:1px 5px; border-radius:3px; background:var(--surface2);
+  color:var(--ink3); border:1px solid var(--line)}
+
+h2{font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:var(--ink3);
+  margin:16px 0 8px; font-weight:600}
+h2:first-child{margin-top:0}
+.hint{color:var(--ink3); font-size:11.5px; margin-top:6px; line-height:1.55}
+.field{display:flex; gap:8px; align-items:center; margin-bottom:6px}
+.field label{width:104px; flex:none; color:var(--ink2); font-size:12px}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:6px 12px}
+table{width:100%; border-collapse:collapse; margin-top:6px}
+th{text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.07em;
+  color:var(--ink3); font-weight:600; padding:5px 6px; border-bottom:1px solid var(--line)}
+td{padding:3px 6px; border-bottom:1px solid var(--line); vertical-align:middle}
+td input[type=text]{padding:2px 5px}
+td select{padding:2px 4px}
+.swatch{width:20px; height:0; border-top-width:3px; border-top-style:solid; display:inline-block}
+.icon{background:transparent; border:none; color:var(--ink3); padding:2px 6px}
+.icon:hover{color:var(--bad); background:transparent}
+.row{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:12px}
+/* Same definition grid the patch page uses for its syntax sheet. */
+.keys{display:grid; grid-template-columns:auto 1fr; gap:7px 14px; align-items:start;
+  font-size:12px; color:var(--ink2)}
+#veil{position:fixed; inset:0; background:rgba(31,29,26,.42); display:none;
+  align-items:center; justify-content:center; z-index:50; padding:24px}
+#veil.on{display:flex}
+.sheet{background:var(--surface); border:1px solid var(--line2); border-radius:8px;
+  box-shadow:0 18px 50px var(--shadow);
+  max-width:900px; width:100%; max-height:88vh; overflow:auto; padding:16px 18px}
+.sheet h3{margin:0 0 10px; font-size:15px}
+.sheet textarea{height:340px; font-family:var(--mono); font-size:11.5px; line-height:1.55}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <img src="img/icon.svg" alt="" width="20" height="20" id="brandmark">
+  <h1>Patching</h1>
+  <nav id="nav">
+    <a href="index.html">Patch</a>
+    <a href="modules.html" class="active">Modules</a>
+    <a href="score.html">Score</a>
+  </nav>
+  <div class="vrule"></div>
+
+  <!-- Same shape as the patch page: File on the left as a fixed landmark, the
+       primary action and Help on the right. "Library" was doing two unrelated
+       jobs, holding both the export and the About box. -->
+  <div class="menu left">
+    <button data-open>File</button>
+    <div class="dropdown">
+      <button id="bnewm">New module<small>Same as the button on the right</small></button>
+      <hr>
+      <button id="bimport">Import…<small>A library.js, or module JSON</small></button>
+      <button id="bexport">Export library<small>Save as lib/library.js</small></button>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+
+  <span id="stat"></span>
+  <div class="vrule"></div>
+  <button id="bnew" class="primary">New module</button>
+  <button id="btheme" title="Light or dark" aria-label="Light or dark">◐</button>
+  <div class="menu">
+    <button data-open>Help</button>
+    <div class="dropdown">
+      <button id="bhelp">Module data<small>What each field means</small></button>
+      <button id="babout">About Patching</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="file" accept=".js,.json" style="display:none">
+
+<div id="cols">
+  <div id="left">
+    <input type="text" id="search" placeholder="Filter">
+    <div id="chips-host"></div>
+    <div id="bulk">
+      <button data-bulk="generics">Turn generics off</button>
+    </div>
+    <div id="list"></div>
+  </div>
+  <div id="mid"></div>
+</div>
+
+<div id="veil"><div class="sheet" id="sheet"></div></div>
+
+<!-- Plain script tags. No build step, nothing to serve. -->
+<script src="lib/generics.js"></script>
+<script src="lib/starter.js"></script>
+<script src="lib/library.js" onerror="void 0"></script>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================================
+   Module library editor.
+
+   Modules arrive from LIBRARIES — plain files in lib/ that push onto
+   window.MODULE_LIBRARIES. Load order is precedence order and your own edits,
+   kept in localStorage, beat all of them.
+
+   Everything is editable. Editing a library module writes an override into
+   localStorage rather than touching the library, so lib/*.js stays as the
+   reference copy and reverting is just dropping the override.
+   ========================================================================== */
+
+var LIBS = window.MODULE_LIBRARIES || [];
+var REPO = "https://github.com/ubertv/patching";   /* also in index.html */
+var VERSION = "0.1.0";                             /* bump all three together */
+/* ------------------------------------------------------------- the store ---
+   ONE map, keyed by module id, holding everything that differs from the files
+   in lib/. That is the whole model, and it is the same one patches and scores
+   use.
+
+   A module you invented is an override with no file underneath it. That is why
+   there is no separate "yours" collection: "yours" and "edited" were two words
+   for one idea, and keeping them apart meant branching on the origin of a
+   module in a dozen places.
+
+   `off: true` on an override hides the module from the patch editor's
+   autocomplete, which retires the third store as well.
+*/
+var LS_MODULES = "patching-modules-v1";
+
+/* Superseded, read once by migrate() and then left alone. Deleting them would
+   strand anyone who opens an older copy of the app against the same browser. */
+var LS_CUSTOM  = "patching-custom-modules-v1";
+var LS_PALETTE = "patching-palette-v1";
+var LS_EDITS   = "patching-library-edits-v1";
+
+var over = load(LS_MODULES, null);
+if (over === null) over = migrate();
+
+/* Fold the three old keys into one. A custom module and an edited library
+   module become the same thing: an entry in `over`. */
+function migrate(){
+  var out = {};
+  var e = load(LS_EDITS, null) || {};
+  for (var id in e) out[id] = e[id];
+  (load(LS_CUSTOM, []) || []).forEach(function(m){ if (m && m.id) out[m.id] = m; });
+  var p = load(LS_PALETTE, null);
+  ((p && p.hidden) || []).forEach(function(id){
+    if (!out[id]) out[id] = { id:id };                    /* off, but otherwise unchanged */
+    out[id].off = true;
+  });
+  return out;
+}
+
+/* Open on a real module rather than a page of prose. A library editor should
+   show you a module. Plaits if it's loaded, otherwise whatever is first, so a
+   replaced library still lands somewhere. What the page is for lives in
+   Help → Modules. */
+function firstModule(){
+  var all = everything();
+  var want = all.filter(function(m){ return m.id === "plaits"; })[0];
+  return (want || all[0] || {}).id || null;
+}
+var sel = null, q = "", cat = "", editing = false;
+
+function load(key, fallback){
+  try { var v = JSON.parse(localStorage.getItem(key)); return v == null ? fallback : v; }
+  catch(e){ return fallback; }
+}
+
+/* ------------------------------------------------------------- persistence ---
+
+   THREE PLACES YOUR WORK CAN LIVE, and only one of them works everywhere.
+   Patches and scores use the same arrangement.
+
+   1. lib/*.js — the durable copy. Plain <script src> files, so they load the
+      same off a filesystem, off localhost and off a web host. Anything in
+      lib/library.js is picked up automatically at boot.
+   2. localStorage — the working copy. Automatic and instant, but it belongs to
+      one browser on one machine, and see the caveat below.
+   3. Export / Import — the bridge. Export writes a lib/library.js you drop next
+      to the others; Import reads one back.
+
+   THE CAVEAT, and it's why this is worth code rather than a paragraph in a
+   README: Firefox refuses localStorage on file:// URLs outright, as a
+   deliberate security measure. Chrome and Safari allow it but treat every
+   file:// page as ONE origin, so two copies of this app in different folders
+   share — and can clobber — each other's storage.
+
+   So we probe rather than assume. If storage isn't writable the app still works
+   completely; it just can't remember anything by itself, and says so instead of
+   quietly dropping your edits when you close the tab. */
+var STORAGE_OK = (function(){
+  try {
+    var k = "patching-probe";
+    localStorage.setItem(k, "1");
+    localStorage.removeItem(k);
+    return true;
+  } catch(e){ return false; }
+})();
+
+/* Changes made since the last export. Not a byte-diff — just "did you touch
+   anything" — because the only thing it drives is whether we nag you. */
+var dirty = false;
+function markDirty(){ dirty = true; drawStat(); }
+function save(){
+  markDirty();
+  if (!STORAGE_OK) return;          /* still in memory, still exportable */
+  try { localStorage.setItem(LS_MODULES, JSON.stringify(over)); }
+  catch(e){ alert("Couldn't save. Storage is full, or this is a private window."); }
+}
+
+/* --- the three questions the rest of the page asks about a module --- */
+
+/* The module as it actually is: the file entry with the override laid over the
+   top, key by key. MERGED, not replaced, because an override is a set of
+   differences and may hold only one of them. Switching a module off writes
+   `{id, off:true}` and nothing else, and replacing would leave a husk with no
+   name, no tags and no jacks. */
+function resolve(id){
+  var f = inFile(id), o = over[id];
+  if (!o) return f;
+  if (!f) return o;
+  var m = {}, k;
+  for (k in f) m[k] = f[k];
+  for (k in o) m[k] = o[k];
+  return m;
+}
+
+/* Is there a copy in lib/? */
+function inFile(id){
+  for (var i = 0; i < LIBS.length; i++){
+    var ms = LIBS[i].modules || [];
+    for (var j = 0; j < ms.length; j++) if (ms[j].id === id) return ms[j];
+  }
+  return null;
+}
+/* Does an override shadow it? Covers switching off as well as editing. */
+function isOverridden(id){ return Object.prototype.hasOwnProperty.call(over, id); }
+
+/* Has the module's DATA changed? Switching one off is not an edit: the jacks,
+   the labels and the links are all still whatever the file says. So an override
+   carrying nothing but `id` and `off` does not count, which is what keeps the
+   badge and Revert honest. */
+function isEdited(id){
+  var o = over[id];
+  if (!o) return false;
+  for (var k in o) if (k !== "id" && k !== "off") return true;
+  return false;
+}
+/* Is it hidden from the patch editor? */
+function isOff(id){ return !!(over[id] && over[id].off); }
+
+/* THE FILE IN lib/ IS THE REFERENCE COPY. It is never written by this page, so
+   Revert to file is just deleting the override and letting the original show
+   through again, and pulling a newer library file gives you the newer defaults
+   for everything you have not touched. */
+var libDefault = inFile;
+
+/* Hand back the object to write into, making the override first if needed. */
+function mutable(e){
+  if (!e) return null;
+  if (!isOverridden(e.id))
+    over[e.id] = JSON.parse(JSON.stringify(inFile(e.id) || e));
+  return over[e.id];
+}
+function revert(id){ delete over[id]; save(); }
+
+var DIRS = ["in","out","both"];
+var SIGS = ["audio","pitch","cv","gate","clock","multi"];
+var SIGCOLOR = { audio:"var(--sig-audio)", pitch:"var(--sig-pitch)", cv:"var(--sig-cv)",
+  gate:"var(--sig-gate)", clock:"var(--sig-clock)", multi:"var(--sig-multi)" };
+var SIGDASH = { audio:"solid", pitch:"dashed", cv:"dotted", gate:"dashed",
+  clock:"dotted", multi:"double" };
+/* Modules are grouped by WHAT THEY DO, not by which file they came from.
+   Provenance is an implementation detail — when you're looking for a filter you
+   don't care whether it arrived in generics.js or starter.js — so it's demoted
+   to a badge. Classification is by tag, which every module carries. */
+var CATS = [
+  ["Sound sources",       ["oscillator","drum","noise","granular","sampler","voice"]],
+  ["Filters & shaping",   ["filter","wavefolder"]],
+  ["Modulation",          ["lfo","envelope","random","modulation"]],
+  ["Sequencing & timing", ["sequencer","clock","quantizer","controller"]],
+  ["Mixing & VCAs",       ["vca","mixer"]],
+  ["Effects",             ["delay","reverb","effect"]],
+  ["Utilities",           ["utility","passive","expander","midi","power"]],
+  ["Output",              ["output"]]
+];
+/* The FIRST TAG wins, not the first category — so tag order is the module's own
+   statement of what it mainly is. Same rule as index.html; keep them in step. */
+function catOf(m){
+  var t = (m.tags || []).map(function(x){ return String(x).toLowerCase(); });
+  for (var k = 0; k < t.length; k++)
+    for (var i = 0; i < CATS.length; i++)
+      if (CATS[i][1].indexOf(t[k]) !== -1) return CATS[i][0];
+  return "Other";
+}
+
+var LINKS = [["mfr","Manufacturer"],["product","Product page"],["manual","Manual"],
+  ["manualNote","Manual note"],["mg","ModularGrid"],["firmware","Firmware"]];
+
+/* ---------------------------------------------------------------- sources --- */
+
+function everything(){
+  var seen = {}, out = [];
+  function add(m, src, srcName, obj){
+    var e = {};
+    for (var k in m) e[k] = m[k];
+    e.jacks = m.jacks || []; e.src = src; e.srcName = srcName; e.obj = obj || null;
+    if (seen[e.id]) out.splice(out.indexOf(seen[e.id]), 1);
+    seen[e.id] = e; out.push(e);
+  }
+  LIBS.forEach(function(L){ (L.modules||[]).forEach(function(m){
+    /* An override shadows the file entry completely. */
+    var ov = isOverridden(m.id) ? over[m.id] : null;
+    add(ov ? resolve(m.id) : m, L.id, L.name, ov);
+    if (ov) seen[m.id].edited = true;
+  }); });
+  /* Overrides with no file underneath are modules you invented. Same thing,
+     just nothing to fall back to. */
+  Object.keys(over).forEach(function(id){
+    if (!inFile(id)) add(over[id], "yours", "Yours", over[id]);
+  });
+  return out;
+}
+function byId(id){ return everything().filter(function(x){ return x.id === id; })[0]; }
+function hidden(id){ return isOff(id); }
+function usable(e){ return !!(e.jacks && e.jacks.length); }
+function inPalette(e){ return usable(e) && !hidden(e.id); }
+/* Anything CAN be edited — library modules through an override, your own
+   directly. But nothing is editable until you ask, because a page of live input
+   fields invites accidents and reads as a form rather than as a reference. */
+function editable(e){ return !!e && editing; }
+/* Off lives on the override, so hiding a module is just another difference from
+   the file, and it travels in the export with everything else. */
+function setHidden(id, off){
+  if (off){
+    if (!over[id]) over[id] = { id:id };
+    over[id].off = true;
+  } else if (over[id]){
+    delete over[id].off;
+    /* An override that only ever said "off" has nothing left to say. */
+    if (Object.keys(over[id]).length === 1 && over[id].id === id && inFile(id)) delete over[id];
+  }
+  save();
+}
+
+/* ------------------------------------------------------------------ helpers --- */
+
+function esc(s){
+  return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function slug(s){
+  return String(s||"").toLowerCase().replace(/\+/g,"plus").replace(/[^a-z0-9]+/g,"-")
+    .replace(/^-+|-+$/g,"");
+}
+var DIRALIAS = { i:"in", in:"in", o:"out", out:"out", b:"both", both:"both" };
+var SIGALIAS = { a:"audio", audio:"audio", p:"pitch", pitch:"pitch", voct:"pitch",
+  c:"cv", cv:"cv", g:"gate", gate:"gate", trig:"gate", t:"gate",
+  k:"clock", clk:"clock", clock:"clock", m:"multi", multi:"multi" };
+var sticky = { dir:"in", sig:"cv" };
+
+/* Aliases are consumed off the END of the line, so a jack genuinely labelled
+   "IN" or "OUT" still parses. Both fields stick, so a run of outputs only needs
+   direction and type stated once. */
+function parseJack(line){
+  var toks = line.trim().split(/\s+/).filter(Boolean);
+  if (!toks.length) return null;
+  var dir = null, sig = null;
+  while (toks.length > 1){
+    var t = toks[toks.length-1].toLowerCase();
+    if (dir === null && DIRALIAS[t]){ dir = DIRALIAS[t]; toks.pop(); continue; }
+    if (sig === null && SIGALIAS[t]){ sig = SIGALIAS[t]; toks.pop(); continue; }
+    break;
+  }
+  return { label: toks.join(" "), dir: dir || sticky.dir, sig: sig || sticky.sig };
+}
+function uniqueId(jacks, base){
+  var id = base, n = 2;
+  while (jacks.some(function(j){ return j.id === id; })) id = base + "-" + (n++);
+  return id;
+}
+
+/* -------------------------------------------------------------- rendering --- */
+
+function drawStat(){
+  var all = everything();
+  var changes = Object.keys(over).length;
+  var s = "<b>"+all.filter(inPalette).length+"</b> of "+all.length+" on";
+  /* Say where the work is, because the answer differs by browser and by how the
+     page was opened, and getting it wrong loses someone's afternoon. */
+  if (!STORAGE_OK){
+    s += ' · <span style="color:var(--bad)">this browser won\'t store anything. '+
+         '<b>Export</b> before you close the tab</span>';
+  } else if (changes){
+    s += ' · '+changes+' change'+(changes===1?'':'s')+
+         (dirty ? ' <span style="color:var(--warn)">not exported yet</span>'
+                : ' <span style="color:var(--ink3)">saved in this browser</span>');
+  }
+  document.getElementById("stat").innerHTML = s;
+}
+
+function drawList(){
+  var all = everything(), html = "";
+
+  /* The button says what the click will do, so you can see the current state
+     without counting toggles. */
+  var gen = all.filter(function(e){ return e.generic; });
+  var genOff = gen.length > 0 && gen.every(function(e){ return hidden(e.id); });
+  var bulkBtn = document.querySelector('[data-bulk="generics"]');
+  if (bulkBtn){
+    bulkBtn.textContent = (genOff ? "Turn generics on" : "Turn generics off");
+    bulkBtn.disabled = gen.length === 0;
+  }
+
+  var shown = all.filter(function(e){
+    if (cat === "@mine"){ if (!isEdited(e.id)) return false; }
+    else if (cat && catOf(e) !== cat) return false;
+    if (!q) return true;
+    return (e.id+" "+e.name+" "+(e.mfr||"")+" "+(e.tags||[]).join(" ")).toLowerCase().indexOf(q) !== -1;
+  });
+
+  /* Category chips: a count each, and clicking narrows to one. Faster than
+     scrolling and it tells you what's actually in the library at a glance. */
+  var chips = '<div id="chips"><button class="chip'+(cat?"":" on")+'" data-cat="">All '+
+    all.length+'</button>';
+  CATS.forEach(function(c){
+    var n = all.filter(function(e){ return catOf(e) === c[0]; }).length;
+    if (!n) return;
+    chips += '<button class="chip'+(cat===c[0]?" on":"")+'" data-cat="'+esc(c[0])+'">'+
+      esc(c[0])+' '+n+'</button>';
+  });
+  var other = all.filter(function(e){ return catOf(e) === "Other"; }).length;
+  if (other) chips += '<button class="chip'+(cat==="Other"?" on":"")+'" data-cat="Other">Other '+other+'</button>';
+  /* Provenance as a filter rather than a grouping: worth being able to ask
+     "just mine", not worth organising the whole list around. */
+  var mine = all.filter(function(e){ return isEdited(e.id); }).length;
+  if (mine) chips += '<button class="chip mine'+(cat==="@mine"?" on":"")+'" data-cat="@mine">Edited '+mine+'</button>';
+  chips += '</div>';
+  document.getElementById("chips-host").innerHTML = chips;
+
+  CATS.map(function(c){ return c[0]; }).concat(["Other"]).forEach(function(name){
+    var rows = shown.filter(function(e){ return catOf(e) === name; });
+    if (!rows.length) return;
+    var on = rows.filter(inPalette).length;
+    html += '<div class="grp"><span>'+esc(name)+'</span>'+
+      '<button class="grptog" data-grp="'+esc(name)+'" title="Turn this whole group on or off in the patch editor">'+
+      on+'/'+rows.length+'</button></div>';
+    rows.forEach(function(e){
+      var ins = e.jacks.filter(function(j){ return j.dir !== "out"; }).length;
+      var outs = e.jacks.filter(function(j){ return j.dir !== "in"; }).length;
+      html += '<div class="mrow'+(e.id===sel?" sel":"")+(inPalette(e)?"":" off")+'" data-id="'+esc(e.id)+'">'+
+        '<span class="sw'+(inPalette(e)?" on":"")+'" data-sw="'+esc(e.id)+'"'+
+          (usable(e)?'':' style="opacity:.3"')+'></span>'+
+        '<span class="nm">'+esc(e.name)+
+          '<small>'+(e.mfr ? esc(e.mfr) : '<span class="badge">generic</span>')+
+          (isEdited(e.id) ? ' <span class="badge mine">edited</span>' : '')+
+          '</small></span>'+
+        (usable(e) ? '<span class="cnt">'+ins+'&nbsp;in · '+outs+'&nbsp;out</span>'
+                   : '<span class="tag">no jacks</span>')+
+        '</div>';
+    });
+  });
+  document.getElementById("list").innerHTML = html ||
+    '<div style="padding:14px;color:var(--ink3)">Nothing matches.</div>';
+}
+
+function drawMid(){
+  var host = document.getElementById("mid");
+  if (!sel){
+    /* Only reachable with an empty library, since the page opens on a module
+       and deleting or importing picks another. What the page is for lives in
+       Help → Modules rather than on a landing page nobody reads twice. */
+    host.innerHTML = '<h2>No modules</h2>'+
+      '<div class="hint">Every library failed to load, or they are all empty. '+
+      '<b>File → Import…</b> takes a <span class="mono">library.js</span>, or '+
+      '<b>New module</b> starts one.</div>';
+    return;
+  }
+  var e = byId(sel);
+  if (!e){ sel = null; return drawMid(); }
+  var ed = editable(e);
+  var h = "";
+
+  /* ---- identity ---- */
+  if (ed){
+    /* Provenance still has to be visible now that the read-only view is gone —
+       otherwise there's nothing on screen telling you whether you're looking at
+       the shipped Plaits or your own copy of it. */
+    h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'+
+        '<div style="flex:1"><span class="tag">'+esc(e.srcName)+'</span>'+
+        (isEdited(e.id) ? ' <span class="badge mine">edited</span>' : '')+
+        '</div>'+
+        '<button id="bdone" class="primary">Done</button></div>'+
+      '<div class="grid2">'+
+      '<div class="field"><label>Name</label><input type="text" id="f-name" value="'+esc(e.name)+'"></div>'+
+      '<div class="field"><label>id</label><input type="text" class="mono" id="f-id" value="'+esc(e.id)+'"></div>'+
+      '<div class="field"><label>Manufacturer</label><input type="text" id="f-mfr" value="'+esc(e.mfr||"")+'"></div>'+
+      '<div class="field"><label>HP</label><input type="text" id="f-hp" value="'+esc(e.hp==null?"":e.hp)+'"></div>'+
+      '<div class="field"><label>Tags</label><input type="text" id="f-tags" value="'+esc((e.tags||[]).join(", "))+'"></div>'+
+      '</div>';
+  } else {
+    h += '<div style="display:flex;align-items:flex-start;gap:10px">'+
+      '<div style="flex:1"><div style="font-size:19px;font-weight:600">'+esc(e.name)+'</div>'+
+      '<div style="color:var(--ink2);margin-bottom:2px">'+
+        esc(e.mfr || (e.generic ? "generic" : ""))+
+        (e.hp ? ' · '+e.hp+' HP' : '')+
+        ' · <span class="mono">'+esc(e.id)+'</span>'+
+        ' · <span class="tag">'+esc(e.srcName)+'</span></div>'+
+      ((e.tags||[]).length ? '<div style="color:var(--ink3);font-size:11.5px">'+
+        esc(e.tags.join(" · "))+'</div>' : '')+
+      (isEdited(e.id) ? '<div style="margin-top:4px"><span class="badge mine">'+
+        (inFile(e.id) ? 'edited, overriding the copy in lib/' : 'yours, no copy in lib/')+
+        '</span></div>' : '')+
+      '</div>'+
+      '<button id="bedit" class="primary" style="flex:none">Edit</button>'+
+      '</div>';
+  }
+
+  /* ---- links ---- */
+  h += '<h2>Info and links</h2>';
+  if (ed){
+    h += LINKS.map(function(L){
+      return '<div class="field"><label>'+L[1]+'</label><input type="text" data-link="'+L[0]+
+        '" value="'+esc((e.links||{})[L[0]]||"")+'"></div>';
+    }).join("")+
+    /* The shipped libraries spell this `note`, singular, matching `manualNote`.
+       This read `notes` and so never showed the six that exist, and saving would
+       have written a second key beside the one it couldn't see. */
+    '<div class="field"><label>Note</label><input type="text" id="f-note" value="'+esc(e.note||"")+
+      '" placeholder="anything the source couldn\'t settle"></div>';
+  } else {
+    var links = e.links || {}, any = false, list = "";
+    LINKS.forEach(function(L){
+      var v = links[L[0]]; if (!v) return;
+      any = true;
+      list += /^https?:/.test(v)
+        ? '<div style="margin-bottom:3px"><span style="color:var(--ink3);display:inline-block;width:110px">'+L[1]+
+          '</span><a href="'+esc(v)+'" target="_blank" rel="noopener">'+esc(v.replace(/^https?:\/\//,"").slice(0,64))+'</a></div>'
+        : '<div style="margin-bottom:3px"><span style="color:var(--ink3);display:inline-block;width:110px">'+L[1]+
+          '</span><span style="color:var(--ink2)">'+esc(v)+'</span></div>';
+    });
+    h += any ? list : '<div class="hint">No links recorded.</div>';
+    if (e.note) h += '<div class="hint" style="margin-top:8px">'+esc(e.note)+'</div>';
+  }
+
+  /* ---- jacks ---- */
+  h += '<h2>Jacks · '+e.jacks.length+'</h2>';
+  if (!e.jacks.length){
+    h += '<div class="hint">None yet.</div>';
+  } else {
+    h += '<table><thead><tr><th style="width:22%">Label</th><th style="width:17%">id</th>'+
+      '<th style="width:74px">Dir</th><th style="width:110px">Type</th>'+
+      '<th>Normalled</th>'+(ed?'<th style="width:26px"></th>':'')+
+      '</tr></thead><tbody>';
+    e.jacks.forEach(function(j, i){
+      h += '<tr class="jr" data-i="'+i+'">';
+      if (ed){
+        h += '<td><input type="text" data-f="label" value="'+esc(j.label)+'"></td>'+
+          '<td><input type="text" class="mono" data-f="id" value="'+esc(j.id)+'"></td>'+
+          '<td>'+selectEl("dir", DIRS, j.dir)+'</td>'+
+          '<td><span class="swatch" style="border-top-color:'+SIGCOLOR[j.sig]+
+            ';border-top-style:'+SIGDASH[j.sig]+'"></span> '+selectEl("sig", SIGS, j.sig)+'</td>'+
+          '<td><input type="text" data-f="normalled" value="'+esc(j.normalled||"")+'" placeholder="what patching it breaks"></td>'+
+          '<td><button class="icon" data-del="'+i+'">✕</button></td>';
+      } else {
+        h += '<td>'+esc(j.label)+'</td>'+
+          '<td class="mono" style="color:var(--ink2)">'+esc(j.id)+'</td>'+
+          '<td style="color:var(--ink2)">'+esc(j.dir)+'</td>'+
+          '<td><span class="swatch" style="border-top-color:'+SIGCOLOR[j.sig]+
+            ';border-top-style:'+SIGDASH[j.sig]+'"></span> '+esc(j.sig)+'</td>'+
+          '<td style="color:var(--ink2);font-size:11.5px">'+esc(j.normalled||"")+'</td>';
+      }
+      h += '</tr>';
+    });
+    h += '</tbody></table>';
+  }
+
+  if (ed){
+    h += '<div class="row">'+
+      '<input type="text" id="addjack" class="mono" placeholder="Add jack:  V/OCT i p" style="flex:1;min-width:240px">'+
+      '<button id="badd">Add</button>'+
+      (!inFile(e.id)
+        ? '<button id="bdel" style="margin-left:auto">Delete module</button>'
+        : '<button id="bcopy" style="margin-left:auto">Duplicate as a variant</button>'+
+          (isEdited(e.id) ? '<button id="brevert">Revert to file</button>' : ''))+'</div>'+
+      '<div class="hint">Direction <span class="mono">i o b</span>, type <span class="mono">a</span>udio '+
+      '<span class="mono">p</span>itch <span class="mono">c</span>v <span class="mono">g</span>ate '+
+      '<span class="mono">k</span>=clock <span class="mono">m</span>ulti. Both optional, both stick. '+
+      'Paste several lines to add a whole panel at once.</div>';
+  }
+  host.innerHTML = h;
+}
+function selectEl(field, opts, val){
+  return '<select data-f="'+field+'">' + opts.map(function(o){
+    return '<option'+(o===val?" selected":"")+'>'+o+'</option>'; }).join("") + '</select>';
+}
+
+function redraw(){ drawStat(); drawList(); drawMid(); }
+
+/* ------------------------------------------------------------ interaction --- */
+
+document.getElementById("search").addEventListener("input", function(){
+  q = this.value.toLowerCase(); drawList();
+});
+document.getElementById("chips-host").addEventListener("click", function(ev){
+  var c = ev.target.closest("[data-cat]"); if (!c) return;
+  cat = c.dataset.cat; drawList();
+});
+document.getElementById("list").addEventListener("click", function(ev){
+  var g = ev.target.closest("[data-grp]");
+  if (g){
+    ev.stopPropagation();
+    var rows = everything().filter(function(e){ return catOf(e) === g.dataset.grp && usable(e); });
+    var allOn = rows.every(inPalette);
+    rows.forEach(function(e){ setHidden(e.id, allOn); });
+    redraw(); return;
+  }
+  var sw = ev.target.closest("[data-sw]");
+  if (sw){
+    ev.stopPropagation();
+    var e = byId(sw.dataset.sw);
+    if (!usable(e)) return;
+    setHidden(e.id, !hidden(e.id));
+    redraw(); return;
+  }
+  var row = ev.target.closest(".mrow");
+  if (row){ sel = row.dataset.id; editing = false; redraw(); }
+});
+/* The one bulk action worth having: generics off in a click, for when you only
+   patch gear you own.
+
+   It flips rather than only hiding, so it's its own undo. That matters — there
+   used to be an "All on" button to recover from this, which meant the only way
+   back from a bulk action was another bulk action that also wiped every module
+   you'd hidden by hand.
+
+   It touches ONLY generics for the same reason. The old version replaced the
+   whole hidden list, so hiding generics silently un-hid everything else. */
+document.getElementById("bulk").addEventListener("click", function(ev){
+  if (!ev.target.closest("[data-bulk]")) return;
+  var gen = everything().filter(function(e){ return e.generic; });
+  var allOff = gen.length > 0 && gen.every(function(e){ return hidden(e.id); });
+  gen.forEach(function(e){ setHidden(e.id, !allOff); });
+  redraw();
+});
+
+/* On the bar as the primary button and repeated in File, the same way the patch
+   page repeats Export SVG in Share. The button is the shortcut; the menu is
+   where you look when you don't know the shortcut is there. */
+function newModule(){
+  var name = prompt("Module name", "New module");
+  if (name === null) return;
+  name = name.trim() || "New module";
+  var id = slug(name), n = 2;
+  while (byId(id)) id = slug(name) + "-" + (n++);
+  over[id] = { id:id, name:name, jacks:[] };
+  sel = id; save(); redraw();
+  var f = document.getElementById("addjack"); if (f) f.focus();
+}
+document.getElementById("bnew").addEventListener("click", newModule);
+document.getElementById("bnewm").addEventListener("click", newModule);
+
+document.getElementById("mid").addEventListener("click", function(ev){
+  var e = byId(sel); if (!e) return;
+  if (ev.target.id === "bcopy"){
+    var id = e.id + "-mine", n = 2;
+    while (byId(id)) id = e.id + "-mine-" + (n++);
+    var copy = JSON.parse(JSON.stringify(e));
+    delete copy.src; delete copy.srcName; delete copy.obj;
+    copy.id = id; copy.name = e.name;
+    over[id] = copy; sel = id; save(); redraw(); return;
+  }
+  if (ev.target.id === "badd"){ addJack(); return; }
+  if (ev.target.id === "bedit"){ editing = true; drawMid(); return; }
+  if (ev.target.id === "bdone"){ editing = false; drawMid(); return; }
+  if (ev.target.id === "brevert"){
+    if (!confirm("Discard your changes to “"+e.name+"” and go back to the shipped version?")) return;
+    revert(e.id); redraw(); return;
+  }
+  if (ev.target.id === "bdel"){
+    if (!confirm("Delete “"+e.name+"”? Patches referencing it will stop resolving.")) return;
+    delete over[e.id];
+    sel = firstModule(); save(); redraw(); return;
+  }
+  var del = ev.target.closest("[data-del]");
+  if (del){ mutable(e).jacks.splice(+del.dataset.del, 1); save(); redraw(); return; }
+});
+document.getElementById("mid").addEventListener("keydown", function(ev){
+  if (ev.target.id === "addjack" && ev.key === "Enter"){ ev.preventDefault(); addJack(); }
+});
+/* A text input silently strips newlines, so a multi-line paste would arrive as
+   one mangled label. Intercept it and treat each line as its own jack — which
+   is the point of pasting a panel's worth at once. */
+document.getElementById("mid").addEventListener("paste", function(ev){
+  if (ev.target.id !== "addjack") return;
+  var txt = (ev.clipboardData || window.clipboardData).getData("text");
+  if (!txt || txt.indexOf("\n") === -1) return;
+  ev.preventDefault();
+  addJackLines(txt);
+});
+function addJack(){
+  var f = document.getElementById("addjack");
+  if (addJackLines(f.value)) f.value = "";
+}
+function addJackLines(text){
+  var e = byId(sel); if (!e) return false;
+  var added = 0;
+  text.split(/\n/).forEach(function(L){
+    var spec = parseJack(L);
+    if (!spec || !spec.label) return;
+    sticky.dir = spec.dir; sticky.sig = spec.sig;
+    mutable(e).jacks.push({ id: uniqueId(mutable(e).jacks, slug(spec.label)),
+      label: spec.label, dir: spec.dir, sig: spec.sig });
+    added++;
+  });
+  if (!added) return false;
+  save(); redraw();
+  var f2 = document.getElementById("addjack"); if (f2){ f2.value = ""; f2.focus(); }
+  return true;
+}
+
+/* The first edit to a library module is what creates its override, and that's
+   the moment "Revert to file" becomes meaningful. Adding the button by hand
+   rather than redrawing, because a redraw mid-keystroke would steal focus and
+   drop the caret to the end of the field. */
+function syncRevert(e){
+  var row = document.querySelector("#mid .row"); if (!row) return;
+  var have = document.getElementById("brevert");
+  if (inFile(e.id) && isEdited(e.id) && !have){
+    var b = document.createElement("button");
+    b.id = "brevert"; b.textContent = "Revert to file";
+    row.appendChild(b);
+  } else if (have && !isEdited(e.id)){ have.remove(); }
+}
+
+document.getElementById("mid").addEventListener("input", function(ev){
+  var e = byId(sel); if (!e) return;
+  var o = mutable(e), t = ev.target, f = t.dataset.f;
+  syncRevert(e);
+  var tr = t.closest("tr.jr");
+  if (tr && f){
+    var j = o.jacks[+tr.dataset.i]; if (!j) return;
+    if (f === "normalled"){ if (t.value.trim()) j.normalled = t.value.trim(); else delete j.normalled; }
+    else j[f] = t.value;
+    save(); if (f === "sig") drawMid();
+    return;
+  }
+  if (t.dataset.link != null){
+    o.links = o.links || {};
+    if (t.value.trim()) o.links[t.dataset.link] = t.value.trim(); else delete o.links[t.dataset.link];
+    save(); return;
+  }
+  switch (t.id){
+    case "f-name":  o.name = t.value; save(); drawList(); drawStat(); break;
+    case "f-mfr":   o.mfr = t.value || undefined; save(); drawList(); break;
+    case "f-hp":    o.hp = t.value === "" ? undefined : (+t.value || undefined); save(); break;
+    case "f-tags":  o.tags = t.value.split(",").map(function(s){ return s.trim(); }).filter(Boolean); save(); break;
+    case "f-note":  o.note = t.value || undefined; save(); break;
+    case "f-id": {
+      var v = slug(t.value);
+      if (v && !byId(v)){
+        var old = o.id; o.id = v; sel = v;
+        if (over[old]){ over[v] = over[old]; over[v].id = v; delete over[old]; }
+        save(); drawList(); drawStat();
+      }
+      break;
+    }
+  }
+});
+
+document.addEventListener("keydown", function(ev){
+  if (ev.key === "Escape"){
+    if (document.getElementById("veil").classList.contains("on")) return closeSheet();
+  }
+});
+
+/* ---------------------------------------------------------------- export --- */
+
+function exportSource(){
+  /* Everything that differs from the files in lib/, whether you invented the
+     module or corrected one. A relabelled jack is worth as much as a new
+     module, since it fixes something everyone else has. Loading this file after
+     the others makes it win. */
+  var mods = Object.keys(over).sort().map(function(id){
+    return JSON.parse(JSON.stringify(over[id]));
+  });
+  return [
+    "// Your modules, written by modules.html.",
+    "// Drop this in as lib/library.js. Both pages read it automatically.",
+    "//",
+    "// Every entry here is something that differs from the other files in lib/:",
+    "// a module you made, a correction to a shipped one, or one switched off.",
+    "// Load order is precedence order, and this file loads last.",
+    "//",
+    "// `off: true` keeps a module out of the patch editor's autocomplete. Cosmetic",
+    "// only: it still parses and still draws.",
+    "",
+    "window.MODULE_LIBRARIES = window.MODULE_LIBRARIES || [];",
+    "window.MODULE_LIBRARIES.push({",
+    ' id: "library",',
+    ' name: "My modules",',
+    " modules: " + JSON.stringify(mods, null, 1),
+    "});",
+    ""
+  ].join("\n");
+}
+
+document.getElementById("bexport").addEventListener("click", function(){
+  var src = exportSource();
+  openSheet(
+    '<h3>Export</h3>'+
+    '<div style="color:var(--ink2);margin-bottom:10px">'+
+      'Save it as <span class="mono">lib/library.js</span>, next to the other library files. '+
+      'Patching reads that file automatically, on both pages. Nothing else to set up.<br><br>'+
+      (STORAGE_OK
+        ? '<b>Your edits already work.</b> They are in this browser and the patch tool is reading '+
+          'them right now.<br><br>'+
+          '<b>Exporting is how you keep them.</b> Browser storage is one browser on one machine, '+
+          'and clearing your browsing data takes it with it. The file survives that, moves to '+
+          'another computer, and can go in the repo.'
+        : '<b style="color:var(--bad)">This browser is not storing your edits.</b> Firefox refuses '+
+          'local storage on <span class="mono">file://</span> pages, so everything here works until '+
+          'you close the tab and then it is gone, for the patch tool too, which reads the same '+
+          'storage.<br><br>'+
+          '<b>Exporting is the only way to keep any of it.</b> Or serve the folder over '+
+          '<span class="mono">http://localhost</span>, which avoids the problem entirely.')+
+      '<br><br>The file holds your own modules <i>and</i> your corrections to shipped ones.'+
+    '</div>'+
+    '<div class="row">'+
+      '<button id="dl" class="primary">Download library.js</button>'+
+      '<button id="cp">Copy</button>'+
+    '</div>'+
+    '<div style="color:var(--ink3);margin-top:10px;font-size:12px">'+
+      'Reading one back in is <b>File → Import…</b>.'+
+    '</div>'+
+    '<div style="color:var(--ink3);margin:10px 0 4px">'+Object.keys(over).length+' module'+
+      (Object.keys(over).length===1?'':'s')+' differ from the files in lib/</div>'+
+    '<textarea readonly id="box"></textarea>'
+  );
+  document.getElementById("box").value = src;
+  document.getElementById("dl").onclick = function(){ download("library.js", src); };
+  document.getElementById("cp").onclick = function(){
+    var ta = document.getElementById("box"); ta.select();
+    try { document.execCommand("copy"); } catch(e){}
+  };
+});
+
+/* -------------------------------------------------------------- importing --- */
+/*
+   Its own command under File, not a file picker tucked inside the Export sheet.
+   Importing isn't a sub-step of exporting, and a control's container should say
+   what the control does.
+*/
+document.getElementById("bimport").addEventListener("click", function(){
+  document.getElementById("file").click();
+});
+document.getElementById("file").addEventListener("change", function(){
+  var f = this.files[0]; this.value = "";
+  if (!f) return;
+  var r = new FileReader();
+  r.onload = function(){
+    try {
+      /* The file is JS, so pull the two assignments out with a regex rather
+         than eval'ing whatever we were handed. */
+      var txt = r.result;
+      var mm = txt.match(/modules:\s*(\[[\s\S]*?\])\s*\n\}\);/);
+      var pm = txt.match(/window\.MODULE_PALETTE\s*=\s*(\{[\s\S]*?\});/);
+      var incoming;
+      if (!mm && /^\s*[\[{]/.test(txt)){
+        var j = JSON.parse(txt);
+        incoming = Array.isArray(j) ? j : (j.modules || []);
+      } else if (mm){
+        incoming = JSON.parse(mm[1]);
+      } else throw new Error("no modules found");
+      over = {};
+      incoming.forEach(function(m){ if (m && m.id) over[m.id] = m; });
+      /* Older exports carried the off list separately. */
+      if (pm){
+        var p = JSON.parse(pm[1]);
+        ((p && p.hidden) || []).forEach(function(id){
+          if (!over[id]) over[id] = { id:id };
+          over[id].off = true;
+        });
+      }
+      /* No toast: redraw repopulates the list and the counter in the header
+         changes on the same frame, which is louder than a message would be. */
+      sel = firstModule(); save(); closeSheet(); redraw();
+    } catch(err){ alert("That didn't parse as a library file: " + err.message); }
+  };
+  r.readAsText(f);
+});
+
+function download(name, text){
+  var blob = new Blob([text], {type:"text/plain"});
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+}
+function openSheet(html){
+  document.getElementById("sheet").innerHTML = html;
+  document.getElementById("veil").classList.add("on");
+}
+function closeSheet(){ document.getElementById("veil").classList.remove("on"); }
+document.getElementById("veil").addEventListener("click", function(ev){
+  if (ev.target.id === "veil") closeSheet();
+});
+
+/* ------------------------------------------------------------------ menus --- */
+function closeMenus(){
+  [].forEach.call(document.querySelectorAll(".menu.open"), function(m){ m.classList.remove("open"); });
+}
+document.addEventListener("click", function(ev){
+  var opener = ev.target.closest("[data-open]");
+  if (opener){
+    var m = opener.parentNode, wasOpen = m.classList.contains("open");
+    closeMenus(); if (!wasOpen) m.classList.add("open");
+    ev.stopPropagation(); return;
+  }
+  if (ev.target.closest(".dropdown")){ setTimeout(closeMenus, 0); return; }
+  closeMenus();
+});
+
+/* What this page is, and the shape of the thing it edits. It used to exist only
+   as prose on the empty pane, which you stop seeing the moment you select a
+   module — exactly when you need to know what `sig` accepts. */
+document.getElementById("bhelp").addEventListener("click", function(){
+  openSheet(
+    '<h3>Modules</h3>'+
+    '<div style="color:var(--ink2);line-height:1.65;max-width:64ch">'+
+      '<p style="margin-top:0">Every module the patch tool can draw comes from a library: a file '+
+      'in <span class="mono">lib/</span> that pushes onto '+
+      '<span class="mono">window.MODULE_LIBRARIES</span>. This page lists them all. Click one to '+
+      'open it, then press Edit.</p>'+
+
+      '<p>The switch controls whether the patch editor offers the module in autocomplete. Off, it '+
+      'still parses, still validates and still draws. Switching modules off cannot break a patch '+
+      'you already wrote.</p>'+
+
+      '<p>Editing a library module saves an override in browser storage. The file in '+
+      '<span class="mono">lib/</span> is never written. Revert to file deletes the override, so '+
+      'a newer library file updates every module you have not edited. Your own modules can be '+
+      'deleted; library ones cannot, only overridden.</p>'+
+
+      '<p>File → Export library writes a <span class="mono">lib/library.js</span> holding your own '+
+      'modules and your overrides. File → Import… reads one back. Browser storage is one browser '+
+      'on one machine, so the exported file is the only durable copy.</p>'+
+    '</div>'+
+
+    '<h3 style="margin-top:20px">Limits</h3>'+
+    '<div style="color:var(--ink2);line-height:1.65;max-width:64ch">'+
+      '<p style="margin-top:0">There is no undo. Deleting a module and clearing an override are '+
+      'both immediate.</p>'+
+      '<p><span class="mono">x</span>, <span class="mono">y</span> and '+
+      '<span class="mono">image</span> are stored and exported but nothing reads them. They are '+
+      'for a panel view that does not exist yet.</p>'+
+      (STORAGE_OK ? ''
+        : '<p style="color:var(--bad)">This browser is not storing anything. Firefox refuses local '+
+          'storage on <span class="mono">file://</span> pages. Export before closing the tab, or '+
+          'serve the folder over <span class="mono">http://localhost</span>.</p>')+
+    '</div>'+
+
+    '<h3 style="margin-top:20px">How a module is stored</h3>'+
+    '<div style="color:var(--ink2);margin-bottom:8px;max-width:64ch">'+
+      'Plain JSON. Only the fields below are read; anything else is dropped on the next export.'+
+    '</div>'+
+    '<textarea readonly id="shape" style="height:230px"></textarea>'+
+
+    '<h3 style="margin-top:20px">Identity</h3>'+
+    '<div class="keys">'+
+      '<div class="mono">id</div><div>Required. Unique across all libraries. Patch source references it, so renaming it breaks every patch that used it.</div>'+
+      '<div class="mono">name</div><div>Required. Drawn on the box.</div>'+
+      '<div class="mono">mfr</div><div>Manufacturer.</div>'+
+      '<div class="mono">hp</div><div>Width in HP. The flow view does not use it.</div>'+
+      '<div class="mono">tags</div><div>The first tag sets the group and the box colour. Put the primary function first: Clouds is <span class="mono">["effect", "granular"]</span> because you patch through it, arbhar is <span class="mono">["granular", …]</span> because you play it.</div>'+
+      '<div class="mono">note</div><div>What the source could not settle. A manual that names jacks in prose, a width never stated, a power draw. Shown under the links.</div>'+
+      '<div class="mono">image</div><div>Relative path to a panel photograph. Stored, not rendered.</div>'+
+      '<div class="mono">off</div><div>Keeps the module out of the patch editor\'s autocomplete. Cosmetic: it still parses, still validates and still draws.</div>'+
+    '</div>'+
+    '<div style="color:var(--ink3);font-size:12px;margin-top:6px">Everything except '+
+      '<span class="mono">id</span> and <span class="mono">name</span> is optional.</div>'+
+
+    '<h3 style="margin-top:20px">Info and links</h3>'+
+    '<div style="color:var(--ink2);margin-bottom:8px;max-width:64ch">'+
+      'Under <span class="mono">links</span>, all optional, all shown on the module page. They are '+
+      'what makes a claim about a jack checkable.'+
+    '</div>'+
+    '<div class="keys">'+
+      '<div class="mono">mfr</div><div>Manufacturer\'s site. <span style="color:var(--ink3)">instruomodular.com</span></div>'+
+      '<div class="mono">product</div><div>Product page for this module. <span style="color:var(--ink3)">instruomodular.com/product/arbhar/</span></div>'+
+      '<div class="mono">manual</div><div>The manual itself, not the downloads page it sits on.</div>'+
+      '<div class="mono">manualNote</div><div>Prose, not a URL. Which edition you read. <span style="color:var(--ink3)">"PDF, 72 pages, Firmware 2.0. Web-layout version also exists."</span></div>'+
+      '<div class="mono">mg</div><div>ModularGrid entry. <span style="color:var(--ink3)">modulargrid.net/e/instruo-arbhar</span></div>'+
+      '<div class="mono">firmware</div><div>Firmware downloads, where the module has them.</div>'+
+      '<div class="mono">source</div><div>Where the jack data came from, if not the manual.</div>'+
+    '</div>'+
+
+    '<h3 style="margin-top:20px">Jacks</h3>'+
+    '<div class="keys">'+
+      '<div class="mono">id</div><div>Required. Stable key, written in patch source. <span class="mono">voct</span>, not a slug of the panel text.</div>'+
+      '<div class="mono">label</div><div>Required. The silkscreen. Drawn on the diagram.</div>'+
+      '<div class="mono">dir</div><div>Required. <span class="mono">in</span>, <span class="mono">out</span> or <span class="mono">both</span>. An output cannot be a cable\'s destination, and the patch tool reports it.</div>'+
+      '<div class="mono">sig</div><div>Required. <span class="mono">audio</span>, <span class="mono">pitch</span>, <span class="mono">cv</span>, <span class="mono">gate</span>, <span class="mono">clock</span> or <span class="mono">multi</span>. The source jack decides what a cable carries. What the destination expects does not change it.</div>'+
+      '<div class="mono">normalled</div><div>What patching this jack disconnects, in prose. 67 of the 226 jacks in <span class="mono">starter.js</span> carry it. A photograph cannot show this.</div>'+
+      '<div class="mono">x / y</div><div>Panel fractions, 0 to 1, so they survive any image resolution. Stored, not read.</div>'+
+    '</div>'+
+    '<div class="row"><button id="helpclose" class="primary">Close</button></div>'
+  );
+  /* A real entry rather than a sketch, so what's described is what you'd get. */
+  document.getElementById("shape").value = JSON.stringify({
+    id: "arbhar", name: "arbhar", mfr: "Instruo", hp: 18,
+    tags: ["granular", "sampler", "effect"],
+    links: {
+      mfr: "https://www.instruomodular.com/",
+      product: "https://www.instruomodular.com/product/arbhar/",
+      manual: "https://www.instruomodular.com/wp-content/uploads/2023/10/Arbhar-Manual-Firmware-2.0-A5.pdf",
+      manualNote: "PDF, 72 pages, Firmware 2.0. Web-layout version also exists.",
+      mg: "https://modulargrid.net/e/instruo-arbhar",
+      firmware: "https://www.instruomodular.com/firmware/"
+    },
+    jacks: [
+      { id: "in", label: "IN", dir: "in", sig: "audio", x: 0.072, y: 0.163 },
+      { id: "onset", label: "ONSET", dir: "in", sig: "gate", x: 0.072, y: 0.264 }
+    ]
+  }, null, 2);
+  document.getElementById("helpclose").onclick = closeSheet;
+});
+
+document.getElementById("babout").addEventListener("click", function(){
+  var all = everything();
+  var jacks = all.reduce(function(a,m){ return a + (m.jacks||[]).length; }, 0);
+  openSheet(
+    '<h3>Patching</h3>'+
+    '<div style="color:var(--ink2);line-height:1.65;max-width:60ch">'+
+      '<p style="margin-top:0"><b>Signal flow diagrams for modular synthesizers.</b> '+
+      'This page decides which modules the patch tool offers, and lets you add your own.</p>'+
+      '<p>Modules come from libraries: plain files in <span class="mono">lib/</span> that the '+
+      'app loads. Library modules are read-only; duplicate one to change it, so updating a '+
+      'library file never clobbers your work.</p>'+
+      '<p style="color:var(--ink3);font-size:12px">Version '+VERSION+'. No build step, no dependencies. MIT licensed. '+
+      'Source at <a href="'+REPO+'" target="_blank" rel="noopener">github.com/ubertv/patching</a>.</p>'+
+    '</div>'+
+    '<div style="margin-top:12px;color:var(--ink2);font-size:12px">'+
+      all.length+' modules, '+jacks+' jacks'+
+      (Object.keys(over).length ? ', '+Object.keys(over).length+' changed by you' : '')+'</div>'+
+    '<div class="row"><button id="aboutclose" class="primary">Close</button></div>'
+  );
+  document.getElementById("aboutclose").onclick = closeSheet;
+});
+
+/* ------------------------------------------------------------------ boot --- */
+
+if (!LIBS.length && !Object.keys(over).length){
+  document.body.innerHTML = '<div style="padding:30px;color:#e0605e">No module libraries loaded. '+
+    'Check that <span style="font-family:monospace">lib/generics.js</span> is present next to this file.</div>';
+} else {
+  /* An older library file can still carry a separate off list. It only seeds a
+     browser that has nothing of its own, including one that cannot have
+     anything, where the file is the only source of on/off state. */
+  if (load(LS_MODULES, null) === null && window.MODULE_PALETTE && window.MODULE_PALETTE.hidden)
+    window.MODULE_PALETTE.hidden.forEach(function(id){
+      if (!over[id]) over[id] = { id:id };
+      over[id].off = true;
+    });
+  save();
+  dirty = false;   /* seeding isn't an edit */
+  if (!sel) sel = firstModule();
+  redraw();
+}
+
+
+/* ------------------------------------------------------------------ theme ---
+   The choice is shared with the other two pages and set on <html> before first
+   paint by the script in <head>. This only handles the toggle. */
+var LS_THEME = "patching-theme-v1";
+document.getElementById("btheme").addEventListener("click", function(){
+  var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem(LS_THEME, next); } catch(e){}
+});
+
+})();
+</script>
+</body>
+</html>

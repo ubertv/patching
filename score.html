@@ -1,0 +1,1422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Score · Patching</title>
+<link rel="icon" href="img/icon.svg" type="image/svg+xml">
+<link rel="icon" href="img/icon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<meta name="theme-color" content="#23272d">
+<script>
+/* Before first paint, or the page flashes light then snaps dark. Duplicated in
+   all three pages because each one has to stand alone off a filesystem. */
+(function(){
+  var t = null;
+  try { t = localStorage.getItem("patching-theme-v1"); } catch(e){}
+  if (t !== "dark" && t !== "light")
+    t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", t);
+})();
+</script>
+<style>
+:root{
+  --paper:#f7f5f1; --surface:#fffefb; --surface2:#efece5;
+  --line:#dcd7cd; --line2:#c8c2b6;
+  --ink:#1f1d1a; --ink2:#5b5750; --ink3:#8f8a80;
+  --accent:#2f5fd0; --accent-soft:#e8eefb;
+  --ok:#1a6f4d; --warn:#8a6208; --bad:#a3312b;
+  --err-bg:#fdeceb; --err-ink:#7d2521;
+  --warn-bg:#fdf6e6; --warn-ink:#6b4d07;
+  --ok-bg:#eaf5ef;  --ok-ink:#155c40;
+  --shadow:rgba(31,29,26,.16); --shadow-soft:rgba(31,29,26,.07);
+  --sans:"SF Pro Text",-apple-system,"Inter","IBM Plex Sans","Segoe UI",Roboto,
+         "Helvetica Neue",Arial,sans-serif;
+  --mono:"SF Mono","JetBrains Mono","IBM Plex Mono","Cascadia Code",
+         ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sig-audio:#b5322c; --sig-cv:#158f7d; --sig-gate:#7b3fbf;
+}
+/* Dark. Same paper metaphor turned over. Set on <html> before first paint. */
+:root[data-theme="dark"]{
+  --paper:#17181a; --surface:#1e2023; --surface2:#282b2f; --mat:#0f1012;
+  --line:#33373c; --line2:#454a51;
+  --ink:#e8e6e1; --ink2:#a9a49c; --ink3:#7b766e;
+  --accent:#6c9bff; --accent-soft:#1c2740;
+  --ok:#4fbf8f; --warn:#d8a63c; --bad:#e2726b;
+  --err-bg:#2c1c1b;  --err-ink:#f0a49d;
+  --warn-bg:#2b2415; --warn-ink:#e3c079;
+  --ok-bg:#16271f;   --ok-ink:#7fd3ac;
+  --shadow:rgba(0,0,0,.55); --shadow-soft:rgba(0,0,0,.35);
+  --sig-audio:#e8736c; --sig-pitch:#7ba4ff; --sig-cv:#4fc4ac;
+  --sig-gate:#b48ae8; --sig-clock:#d9a63f; --sig-multi:#98a1ad;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0; background:var(--paper); color:var(--ink); overflow:hidden;
+  font:13.5px/1.55 var(--sans); -webkit-font-smoothing:antialiased;
+  display:flex; flex-direction:column}
+button,input,select,textarea{font:inherit; color:inherit}
+button{background:var(--surface); border:1px solid var(--line2); color:var(--ink);
+  border-radius:5px; padding:4px 9px; cursor:pointer}
+button:hover{background:var(--surface2)}
+button.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+input[type=text],select,textarea{background:var(--surface); border:1px solid var(--line2);
+  border-radius:5px; padding:4px 7px; outline:none}
+a{color:var(--accent)}
+.mono{font-family:var(--mono)}
+
+/* Chrome shared with index.html and modules.html. Duplicated rather than
+   pulled from a stylesheet, because a page here has to work opened straight
+   off the filesystem with nothing serving it, and that is worth more than not
+   repeating thirty lines. */
+#top{display:flex; align-items:center; gap:9px; padding:9px 14px;
+  background:var(--surface); border-bottom:1px solid var(--line); flex:none}
+#top h1{font-size:14px; margin:0; font-weight:650; letter-spacing:-.01em}
+#top .spacer{flex:1}
+#sname{width:210px}
+.expt{font-size:10px; text-transform:uppercase; letter-spacing:.09em; font-weight:650;
+  color:var(--warn-ink); background:var(--warn-bg); border:1px solid var(--line2);
+  border-radius:4px; padding:1px 6px}
+
+#nav{display:flex; gap:2px; background:var(--surface2); padding:2px;
+     border-radius:7px; border:1px solid var(--line)}
+#nav a{color:var(--ink2); text-decoration:none; padding:3px 12px; border-radius:5px;
+  font-size:12.5px; font-weight:500}
+#nav a:hover{color:var(--ink); background:var(--surface)}
+#nav a.active{background:var(--surface); color:var(--ink); font-weight:600;
+  box-shadow:0 1px 2px var(--shadow-soft)}
+.vrule{width:1px; height:20px; background:var(--line); flex:none; margin:0 3px}
+#stat{color:var(--ink2); font-size:12px}
+
+.menu{position:relative}
+.menu > button::after{content:"▾"; margin-left:5px; font-size:9px; opacity:.55;
+  position:relative; top:-1px}
+.menu.open > button{background:var(--surface2); border-color:var(--line2)}
+.dropdown{position:absolute; top:calc(100% + 5px); right:0; min-width:210px; z-index:40;
+  background:var(--surface); border:1px solid var(--line2); border-radius:7px;
+  padding:4px; display:none; box-shadow:0 10px 30px var(--shadow)}
+.menu.open .dropdown{display:block}
+.menu.left .dropdown{left:0; right:auto}
+.dropdown button{display:block; width:100%; text-align:left; background:none; border:none;
+  padding:6px 10px; border-radius:5px; font-size:12.5px; color:var(--ink); cursor:pointer}
+.dropdown button:hover{background:var(--accent-soft); color:var(--accent)}
+.dropdown button.danger:hover{background:var(--err-bg); color:var(--bad)}
+.dropdown button:disabled{opacity:.4; cursor:not-allowed}
+.dropdown button:disabled:hover{background:none; color:var(--ink)}
+.dropdown hr{border:none; border-top:1px solid var(--line); margin:4px 6px}
+.dropdown small{display:block; color:var(--ink3); font-size:11px; margin-top:1px}
+
+/* Where this score stands relative to scores/scores.js. */
+#sstate{font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; font-weight:650;
+  padding:2px 7px; border-radius:20px; flex:none; cursor:default}
+#sstate:empty{display:none}
+#sstate.file{background:var(--surface2); color:var(--ink3); border:1px solid var(--line)}
+#sstate.edited{background:var(--accent-soft); color:var(--accent); border:1px solid transparent}
+
+#veil{position:fixed; inset:0; background:rgba(0,0,0,.5); display:none;
+  align-items:flex-start; justify-content:center; padding:40px 20px; z-index:60; overflow:auto}
+#veil.on{display:flex}
+.sheet{background:var(--surface); border:1px solid var(--line2); border-radius:8px;
+  box-shadow:0 18px 50px var(--shadow);
+  max-width:900px; width:100%; max-height:88vh; overflow:auto; padding:16px 18px}
+.sheet h3{margin:0 0 10px; font-size:15px}
+.sheet textarea{width:100%; height:300px; font-family:var(--mono); font-size:11.5px;
+  line-height:1.55; border:1px solid var(--line2); border-radius:5px; padding:8px 10px}
+.keys{display:grid; grid-template-columns:auto 1fr; gap:7px 14px; align-items:start;
+  font-size:12px; color:var(--ink2)}
+
+#cols{display:flex; flex:1; min-height:0}
+#left{width:480px; min-width:280px; flex:none; display:flex; flex-direction:column;
+  min-height:0}
+/* Same two splitters as the patch page. Horizontal sets how much room the text
+   gets against the score; vertical sets how much the messages take. */
+#hsplit{width:5px; flex:none; cursor:col-resize; background:var(--line); transition:background .12s}
+#hsplit:hover,#hsplit.dragging{background:var(--accent)}
+#vsplit{height:5px; flex:none; cursor:row-resize; background:var(--line); transition:background .12s}
+#vsplit:hover,#vsplit.dragging{background:var(--accent)}
+#src{flex:1 1 auto; min-height:60px; border:none; border-radius:0; resize:none;
+  padding:12px 14px; font:12.5px/1.65 var(--mono); background:var(--surface)}
+#msgs{flex:0 0 auto; overflow:auto; background:var(--paper)}
+.msg{padding:5px 12px; border-bottom:1px solid var(--line); font-size:12px; display:flex; gap:8px}
+.msg b.ln{color:var(--ink3); font:11px var(--mono); flex:none; width:22px; text-align:right}
+.msg.err{background:var(--err-bg); color:var(--err-ink)}
+.msg.warn{background:var(--warn-bg); color:var(--warn-ink)}
+.msg.ok{background:var(--ok-bg); color:var(--ok-ink)}
+#right{flex:1; min-width:0; display:flex; flex-direction:column}
+#out{flex:1; overflow:auto; padding:16px 18px}
+.panehead{display:flex; align-items:center; gap:6px; margin:0; padding:5px 8px 5px 14px;
+  background:var(--surface2); border-bottom:1px solid var(--line); flex:none}
+.panehead .spacer{flex:1}
+/* Same expand and collapse arrows as the patch page, so the gesture carries over. */
+.panebtn{padding:2px 5px; line-height:0; color:var(--ink3); border-color:transparent;
+  background:none; box-shadow:none}
+.panebtn:hover{color:var(--ink); background:var(--surface); border-color:var(--line)}
+.panebtn svg{display:block}
+
+h2{font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:var(--ink3);
+  margin:20px 0 8px; font-weight:600}
+h2:first-child{margin-top:0}
+/* The grid fills the pane. table-layout:fixed makes every section column the
+   same width, so adding one narrows them all evenly instead of the last one
+   sprawling. The wrapper scrolls once min-width kicks in. */
+.gridwrap{overflow-x:auto; margin:0 -2px; padding:0 2px}
+table.grid{width:100%; table-layout:fixed; border-collapse:collapse; font-size:12px}
+table.grid th,table.grid td{border:1px solid var(--line); padding:7px 10px;
+  text-align:left; vertical-align:middle; overflow:hidden}
+table.grid th{background:var(--surface2); font-size:10px; text-transform:uppercase;
+  letter-spacing:.07em; color:var(--ink2); font-weight:650}
+.rowhead{width:170px; background:var(--surface); font-weight:500; font-size:11.5px;
+  white-space:nowrap; text-overflow:ellipsis}
+td.chg{background:var(--accent-soft)}
+td.same{color:var(--ink3); font-size:10.5px; font-variant-numeric:tabular-nums}
+.gl{display:block; color:var(--accent); opacity:.9}
+.gl.fluid{width:100%}
+td.chg .gl{margin-bottom:2px}
+.gv{font-variant-numeric:tabular-nums; font-size:10.5px; font-weight:500; color:var(--ink2);
+  display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.key{margin-top:10px; color:var(--ink3); font-size:10.5px; display:flex; flex-wrap:wrap; gap:4px 16px}
+.kitem{display:flex; align-items:center; gap:5px}
+.key .gl{color:var(--ink3); opacity:.8}
+.verb.shape{color:var(--warn-ink); border-color:var(--line2)}
+.verb.move{color:var(--accent); border-color:var(--accent-soft)}
+.verb.ramp{color:var(--accent); border-color:var(--accent-soft)}
+.cue{font-weight:400; text-transform:none; letter-spacing:0; color:var(--ink3);
+  display:block; font-size:10.5px; margin-top:1px}
+
+/* The reading view. Full width, and laid out as columns so the verbs and the
+   shapes line up down the page. Scanning a section for "what do I do next"
+   works on shape and position before it works on words. */
+.sect{margin:0 0 20px; padding:0}
+.sect h3{margin:0; font-size:15px; padding-bottom:3px; border-bottom:2px solid var(--line2)}
+.sect .when{color:var(--ink3); font-size:12px; margin:3px 0 6px}
+.move{display:grid; grid-template-columns:66px 58px 1fr; gap:0 12px; align-items:center;
+  padding:4px 2px; font-size:13px; border-bottom:1px solid var(--line)}
+.move:last-child{border-bottom:none}
+.move .body{min-width:0}
+.move .verb{font:10.5px var(--mono); border-radius:3px; padding:1px 0; text-align:center;
+  border:1px solid var(--line2); color:var(--ink2); background:var(--surface)}
+.move .gl{opacity:.8}
+/* A direction keeps the same three columns as everything else, but its text
+   spans from the glyph column onward. That sets prose apart from a command
+   without breaking the vertical alignment the grid exists for, and gives a long
+   sentence room to run. */
+.move.plain .dir{grid-column:2 / -1}
+.verb.patch{color:var(--ok); border-color:var(--line2)}
+.verb.unpatch{color:var(--bad); border-color:var(--line2)}
+.verb.mute{color:var(--warn-ink); border-color:var(--line2)}
+.verb.set{color:var(--accent); border-color:var(--accent-soft)}
+.dir{font-style:italic; color:var(--ink2)}
+.note{color:var(--ink3); font-size:11.5px}
+.hint{color:var(--ink3); font-size:11.5px; line-height:1.6; max-width:62ch}
+.empty{color:var(--ink3); max-width:60ch; line-height:1.65}
+table.ref{margin:6px 0 14px; font-size:12px}
+table.ref td{border:none; border-bottom:1px solid var(--line); padding:5px 12px 5px 0;
+  vertical-align:top; color:var(--ink2)}
+table.ref td:first-child{white-space:nowrap; color:var(--ink); width:1%; padding-right:18px}
+.empty pre{background:var(--surface); border:1px solid var(--line); border-radius:6px;
+  padding:10px 12px; font:12px/1.6 var(--mono); color:var(--ink2); overflow:auto}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <img src="img/icon.svg" alt="" width="20" height="20" id="brandmark">
+  <h1>Patching</h1>
+  <nav id="nav">
+    <a href="index.html">Patch</a>
+    <a href="modules.html">Modules</a>
+    <a href="score.html" class="active">Score</a>
+  </nav>
+  <div class="vrule"></div>
+
+  <div class="menu left">
+    <button data-open>File</button>
+    <div class="dropdown">
+      <button id="bnew">New score</button>
+      <button id="bdup">Duplicate</button>
+      <hr>
+      <button id="bimport">Import…<small>A scores.js, or a single score JSON</small></button>
+      <button id="ball">Export all scores<small>Save as scores/scores.js</small></button>
+      <button id="bexportm">This score as a page<small>Same as the button. Opens and prints</small></button>
+      <button id="btxt">This score as text<small>Plain .txt, the source you typed</small></button>
+      <hr>
+      <button id="brevert">Revert to file<small>Discard your changes to this one</small></button>
+      <button id="bdel" class="danger">Delete score</button>
+    </div>
+  </div>
+
+  <select id="slist" title="Saved scores"></select>
+  <input type="text" id="sname" placeholder="Untitled score">
+  <span id="sstate" aria-live="polite"></span>
+  <span class="expt">experiment</span>
+
+  <div class="spacer"></div>
+
+  <label style="color:var(--ink2);font-size:12px">Against
+    <select id="patchsel"></select></label>
+  <span id="stat"></span>
+  <div class="vrule"></div>
+  <button id="bexport" class="primary">Export score</button>
+  <button id="btheme" title="Light or dark" aria-label="Light or dark">◐</button>
+  <div class="menu">
+    <button data-open>Help</button>
+    <div class="dropdown">
+      <button id="bhelp">Score syntax<small>Sections, moves, settings</small></button>
+      <button id="babout">About Score</button>
+    </div>
+  </div>
+</div>
+
+<div id="veil"><div class="sheet" id="sheet"></div></div>
+<input type="file" id="file" accept=".js,.json,.txt" style="display:none">
+
+<div id="cols">
+  <div id="left">
+    <h2 class="panehead">Score source<span class="spacer"></span>
+      <button class="panebtn" id="focused" title="Expand the editor (Esc to restore)"></button>
+    </h2>
+    <textarea id="src" spellcheck="false" placeholder="INTRO:
+  * vcf: cutoff = 15% | resonance = 40%
+  mute vca
+
+BUILD: a few minutes
+  * vcf: cutoff = 60%
+  patch lfo:tri >> vcf:cutoff
+  wait 8 bars"></textarea>
+    <div id="vsplit" title="Drag to resize"></div>
+    <div id="msgs"></div>
+  </div>
+  <div id="hsplit" title="Drag to resize"></div>
+  <div id="right">
+    <h2 class="panehead">Score<span class="spacer"></span>
+      <button class="panebtn" id="focusr" title="Expand the score (Esc to restore)"></button>
+    </h2>
+    <div id="out"></div>
+  </div>
+</div>
+
+<script src="lib/generics.js"></script>
+<script src="lib/starter.js"></script>
+<script src="lib/library.js" onerror="void 0"></script>
+<script src="patches/patches.js" onerror="void 0"></script>
+<script src="scores/scores.js" onerror="void 0"></script>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================================
+   SCORES. An experiment, and the least settled of the three pages. Linked from
+   the others, but it says so in the header.
+
+   A patch is a noun. Playing it is a verb. This is an attempt at the verbs.
+
+   WHAT THIS IS NOT: a sequencer, a timeline, or anything that represents notes.
+   Down that road you rebuild a DAW badly. The unit here is the MOVE, not the
+   minute, because that is how people actually remember a performance: "open the
+   filter, bring in the second voice, let the delay run away", never "at 3:47,
+   cutoff to 40%".
+
+   So a score is a list of named sections and what you change to get into each
+   one. Timing stays deliberately vague, as free text, because in performance it
+   is vague.
+   ========================================================================== */
+
+var LS_SCORES  = "patching-scores-v1";
+var LS_PATCHES = "patching-patches-v1";
+var LS_CUSTOM  = "patching-custom-modules-v1";
+var LS_EDITS   = "patching-library-edits-v1";
+
+function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+function lsSet(k,v){ try { localStorage.setItem(k,v); return true; } catch(e){ return false; } }
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+
+/* ---------------------------------------------------------------- modules --- */
+/* Same three sources as the patch tool, in the same precedence order, so a
+   module you corrected over there is the module you get here. */
+var LIBS = window.MODULE_LIBRARIES || [];
+var MODMAP = {};
+(function(){
+  var EDITS = {}, CUSTOM = [];
+  try { EDITS = JSON.parse(lsGet(LS_EDITS)) || {}; } catch(e){}
+  try { CUSTOM = JSON.parse(lsGet(LS_CUSTOM)) || []; } catch(e){}
+  LIBS.forEach(function(L){ (L.modules||[]).forEach(function(m){
+    MODMAP[m.id] = EDITS[m.id] || m; }); });
+  CUSTOM.forEach(function(m){ MODMAP[m.id] = m; });
+})();
+function modOf(id){ return MODMAP[String(id).replace(/#[a-z0-9\-]+$/i, "")] || null; }
+function jackOf(id, jid){
+  var m = modOf(id); if (!m) return null;
+  var js = m.jacks || [];
+  for (var i=0;i<js.length;i++) if (js[i].id === jid) return js[i];
+  return null;
+}
+
+/* ------------------------------------------------------------- the patch --- */
+/* Scores are written against a patch, which is what makes them checkable: an
+   `unpatch` of a cable you never made is a mistake worth catching, and so is a
+   parameter on a module that isn't in the patch at all. Without a patch selected
+   everything still parses, it just can't be checked. */
+/* =============================================================== the store ===
+   Identical arrangement to patches and modules, deliberately, so there is one
+   thing to learn rather than three.
+
+     scores/scores.js   the durable copy, loaded at boot by a plain script tag
+     browser storage    the working copy, shadowing the file by id
+     Export / Import    the bridge
+
+   A score in both places is one score. The stored copy wins while it differs
+   from the file and stops existing the moment it doesn't, so opening a score
+   from the file never shadows it and editing one back to matching drops the
+   override on its own.
+*/
+var SCORE_FILES = window.SCORE_FILES || [];
+var FILES = {}, FILEORDER = [];
+SCORE_FILES.forEach(function(F){
+  (F.scores || []).forEach(function(s){
+    if (!s || !s.id) return;
+    if (!FILES[s.id]) FILEORDER.push(s.id);
+    FILES[s.id] = s;
+  });
+});
+
+var idSeq = 0;
+function newScore(){
+  return { id: "s" + Date.now().toString(36) + (idSeq++ ? "-" + idSeq : ""),
+           name: "Untitled score", src: "", patchId: "" };
+}
+function cloneScore(s){
+  return { id:s.id, name:s.name || "Untitled score", src:s.src || "", patchId:s.patchId || "" };
+}
+function canon(s){ return JSON.stringify([s.name||"", s.src||"", s.patchId||""]); }
+
+function scoreIds(){
+  var seen = {}, out = [];
+  FILEORDER.forEach(function(id){ seen[id] = 1; out.push(id); });
+  Object.keys(store.scores).forEach(function(id){ if (!seen[id]) out.push(id); });
+  return out;
+}
+function allScores(){ return scoreIds().map(getScore); }
+function getScore(id){
+  if (store.scores[id]) return store.scores[id];
+  if (FILES[id]) return cloneScore(FILES[id]);
+  return null;
+}
+function fromFile(id){ return !!FILES[id]; }
+function isEdited(id){ return !!(FILES[id] && store.scores[id]); }
+
+function loadStore(){
+  try {
+    var s = JSON.parse(lsGet(LS_SCORES) || "null");
+    if (s && s.scores) return s;
+    /* v1 held a single score under `src` and had no ids. Carry it across rather
+       than dropping someone's only score on the floor. */
+    if (s && s.src){
+      var one = newScore(); one.name = "My score"; one.src = s.src;
+      var st = { scores:{}, current:one.id }; st.scores[one.id] = one; return st;
+    }
+  } catch(e){}
+  return { scores:{}, current:null };
+}
+function currentScore(){
+  var s = getScore(store.current);
+  if (s) return s;
+  var ids = scoreIds();
+  if (ids.length) return getScore(ids[0]);
+  var ns = newScore(); store.scores[ns.id] = ns; return ns;
+}
+var store = loadStore();
+var score = currentScore();
+
+function save(){
+  if (FILES[score.id] && canon(score) === canon(FILES[score.id])) delete store.scores[score.id];
+  else store.scores[score.id] = score;
+  store.current = score.id;
+  if (!lsSet(LS_SCORES, JSON.stringify(store))) STORAGE_OK = false;
+}
+function showScore(s){
+  score = s; store.current = s.id;
+  document.getElementById("src").value = s.src || "";
+  document.getElementById("sname").value = s.name || "";
+  var ps = document.getElementById("patchsel");
+  if (ps) ps.value = s.patchId || "";
+  patch = patches[s.patchId] || null;
+  facts = patchFacts(patch);
+}
+
+var STORAGE_OK = (function(){
+  try { localStorage.setItem("patching-probe","1"); localStorage.removeItem("patching-probe"); return true; }
+  catch(e){ return false; }
+})();
+
+/* Same two sources as the patch tool, in the same precedence order: the file
+   is the baseline, browser storage overrides it by id. Reading only storage
+   would make every patch that lives in patches/patches.js invisible here. */
+var patches = {}, patch = null;
+(window.PATCH_FILES || []).forEach(function(F){
+  (F.patches || []).forEach(function(p){ if (p && p.id) patches[p.id] = p; });
+});
+try {
+  var st = JSON.parse(lsGet(LS_PATCHES) || "null");
+  if (st && st.patches) Object.keys(st.patches).forEach(function(k){ patches[k] = st.patches[k]; });
+} catch(e){}
+
+/* The patch's own source is parsed only far enough to know which modules are in
+   it and which cables exist. No need to duplicate the whole patch parser. */
+function patchFacts(p){
+  var mods = {}, cables = {};
+  if (!p || !p.src) return { mods:mods, cables:cables, any:false };
+  p.src.split(/\n/).forEach(function(raw){
+    var line = raw.replace(/(^|\s)(#|\/\/).*$/, "").trim();
+    if (!line || /^[*|]/.test(line)) return;
+    line = line.replace(/^-\s+/, "").replace(/"[^"]*"\s*$/, "").replace(/\[[a-z]+\]\s*$/i, "").trim();
+    if (!/(->|>>|[pgtc]>|→|>|\sto\s)/i.test(line)) return;
+    var parts = line.split(/\s*(->|>>|[pgtc]>|→|>)\s*|\s+to\s+/i).filter(function(x){ return x != null; });
+    var ends = parts.filter(function(x){ return !/^(->|>>|[pgtc]>|→|>)$/.test(x); });
+    ends.forEach(function(e, i){
+      e.split(/\s+and\s+|\s*,\s*/i).forEach(function(one){
+        var m = one.trim().match(/^([a-z0-9\-]+(?:#[a-z0-9\-]+)?)(?::([a-z0-9\-]+))?(?::([a-z0-9\-]+))?$/i);
+        if (!m) return;
+        mods[m[1]] = 1;
+        /* Keyed by DESTINATION alone, because an input can only take one cable.
+           That makes the key unique without having to resolve what a chain's
+           middle module leaves by, which is a different jack from the one it was
+           entered on and not worth re-deriving here. */
+        if (i > 0 && m[2]) cables[m[1] + ":" + m[2]] = 1;
+      });
+    });
+  });
+  return { mods:mods, cables:cables, any:Object.keys(mods).length > 0 };
+}
+var facts = { mods:{}, cables:{}, any:false };
+
+/* ---------------------------------------------------------------- parsing --- */
+/*
+   SECTION:            a name, optionally followed by a timing cue in free text
+     * mod: k = v      set a knob. Same syntax as a patch parameter block
+     | k = v           continuation of the block above
+     patch a:b -> c:d  make a connection
+     unpatch a:b       break one
+     mute mod          silence something
+     unmute mod
+     > free text       a direction, in words, for anything the verbs can't say
+     "note"            trailing on any line
+     # or //           comment, never shown
+*/
+function parse(text){
+  var out = { sections: [], errors: [] };
+  var cur = null, lastMod = null;
+
+  text.split(/\n/).forEach(function(raw, i){
+    var ln = i + 1;
+    var line = raw.replace(/(^|\s)(#|\/\/).*$/, "").trim();
+    if (!line) return;
+
+    function err(msg){ out.errors.push({ line:ln, msg:msg }); }
+    function warn(msg){ out.errors.push({ line:ln, msg:msg, warn:true }); }
+    function ok(msg){ out.errors.push({ line:ln, msg:msg, ok:true }); }
+
+    var note = "";
+    line = line.replace(/"([^"]*)"\s*$/, function(_, n){ note = n; return ""; }).trim();
+    if (!line && note){ line = '> ' + note; note = ""; }
+
+    /* Section header. Everything below belongs to it until the next one.
+
+       IT MUST START AT COLUMN 0. Without that guard an indented line like
+       `vcf: cutoff 20%`, which is someone forgetting the `*`, quietly became a
+       new section called "vcf" and took the rest of the score with it. Requiring
+       column 0 also makes the structure visible in the source, which is how
+       everyone writes it anyway. */
+    var indent = raw.match(/^\s*/)[0].length;
+    var sm = indent === 0 && line.match(/^([^*|>][^:]*):\s*(.*)$/);
+    if (sm && !/^(patch|unpatch|mute|unmute)\b/i.test(line) && !/(->|>>|[pgtc]>|=)/.test(line)){
+      cur = { name: sm[1].trim(), when: sm[2].trim(), moves: [], line: ln };
+      out.sections.push(cur);
+      lastMod = null;
+      return;
+    }
+    if (!cur){
+      err("Start with a section, like <span class='mono'>INTRO:</span>. Everything belongs to one.");
+      return;
+    }
+
+    /* A direction, for the parts of playing that no verb will ever cover.
+       A leading > is optional. Most of what anyone wants to write here is a
+       sentence, and making them mark it as a sentence is friction for no gain. */
+    if (line[0] === ">"){
+      cur.moves.push({ kind:"dir", text: line.slice(1).trim(), note:note, line:ln });
+      lastMod = null;
+      return;
+    }
+
+    /* Knob settings, reusing the patch language exactly. */
+    var pm = line.match(/^\*\s*([a-z0-9\-]+(?:#[a-z0-9\-]+)?)\s*:\s*(.*)$/i);
+    if (pm){
+      lastMod = pm[1];
+      if (!modOf(lastMod)) err("No module <b>"+esc(lastMod)+"</b>.");
+      else if (facts.any && !facts.mods[lastMod])
+        warn("<b>"+esc(lastMod)+"</b> isn't in this patch.");
+      if (pm[2]) addSets(cur, lastMod, pm[2], ln, note, err);
+      return;
+    }
+    if (line[0] === "|"){
+      if (!lastMod) return err("Nothing above this to attach the setting to. Start with <span class='mono'>* module:</span>.");
+      addSets(cur, lastMod, line.replace(/^\|\s*/, ""), ln, note, err);
+      return;
+    }
+
+    /* The physical moves. */
+    var vm = line.match(/^(patch|unpatch|mute|unmute)\s+(.*)$/i);
+    if (vm){
+      var verb = vm[1].toLowerCase(), rest = vm[2].trim();
+      lastMod = null;
+
+      if (verb === "mute" || verb === "unmute"){
+        var mid = rest.split(/\s/)[0];
+        if (!modOf(mid)) err("No module <b>"+esc(mid)+"</b>.");
+        else if (facts.any && !facts.mods[mid]) warn("<b>"+esc(mid)+"</b> isn't in this patch.");
+        cur.moves.push({ kind:verb, mod:mid, note:note, line:ln });
+        return;
+      }
+
+      var cm = rest.split(/\s*(->|>>|[pgtc]>|→|>)\s*|\s+to\s+/i).filter(function(x){ return x; });
+      var from = (cm[0]||"").trim(), to = (cm[2]||cm[1]||"").trim();
+      if (!from || !to || from === to)
+        return err("<span class='mono'>"+esc(verb)+"</span> needs two ends: <span class='mono'>"+
+          esc(verb)+" vco:saw -&gt; vcf:in</span>.");
+      [from, to].forEach(function(end){
+        var em = end.match(/^([a-z0-9\-]+(?:#[a-z0-9\-]+)?)\s*:\s*([a-z0-9\-]+)$/i);
+        if (!em) return err("<span class='mono'>"+esc(end)+"</span> isn't <span class='mono'>module:jack</span>.");
+        if (!modOf(em[1])) return err("No module <b>"+esc(em[1])+"</b>.");
+        if (!jackOf(em[1], em[2])) return err("<b>"+esc(em[1])+"</b> has no jack <b>"+esc(em[2])+"</b>.");
+      });
+      /* The check worth having: you can only unplug something you plugged in. */
+      if (verb === "unpatch" && facts.any){
+        if (!facts.cables[to])
+          warn("The patch has no cable <span class='mono'>"+esc(from)+" &rarr; "+esc(to)+
+               "</span>, so there's nothing to unpatch.");
+        else ok("Breaks a cable that is in the patch.");
+      }
+      cur.moves.push({ kind:verb, from:from, to:to, note:note, line:ln });
+      return;
+    }
+
+    /* Anything left is a direction in words. Unmarked prose is the common case
+       so it must not be an error, but a mistyped command reads as prose too and
+       would then vanish silently. So: take it as prose, and warn when it looks
+       like it was meant to be something. A warning draws the eye without
+       blocking, which is the right severity for "did you mean". */
+    cur.moves.push({ kind:"dir", text: line, note:note, line:ln });
+    lastMod = null;
+    if (looksLikeCommand(line))
+      warn("Read as a direction in words. If it was meant as a setting, it needs "+
+           "<span class='mono'>* module: knob = value</span>.");
+  });
+  return out;
+}
+
+/* A value can be a place, a journey, or a behaviour.
+
+     cutoff = 60%                   a step. Get there and stay there.
+     cutoff = 15% to 60%            a ramp.
+     cutoff = 10 to 50 to 10 to 90  a shape. Any number of points.
+     cutoff = lfo                   a behaviour, drawn as its characteristic wave.
+     cutoff = stepped random        ditto. Sample and hold.
+
+   This is the idea taken from Oramics and from Stockhausen's Studie II: the score
+   carries the SHAPE of a move, not only where it ends up. A number says the
+   filter is at 60%. A shape says it is being wobbled, or walked, or held, which
+   is the part you cannot reconstruct from a number six months later.
+
+   `to` rather than `>` because the patch language already uses `to` to mean an
+   arrow. `>` still works, but one word means one thing now. */
+
+/* Motion words, and the curve each one draws. Kept to the vocabulary people
+   already use at the rack: nobody says "triangular periodic modulation", they
+   say "an LFO on the cutoff". Aliases are generous on purpose, because being
+   told your synonym is wrong is a stupid way to lose a thought. */
+var SHAPES = [
+  ["sine",     ["lfo","sine","sin","wobble","wobbling","modulated","mod"]],
+  ["triangle", ["triangle","tri"]],
+  ["square",   ["square","pulse","gated","on off","onoff"]],
+  ["saw",      ["saw","sawtooth","ramp up","rising","rise","opening","open"]],
+  ["ramp-dn",  ["ramp down","falling","fall","closing","close","decay"]],
+  ["sh",       ["stepped random","random","s&h","sample and hold","sample & hold",
+                "stepped","steps","jumping"]],
+  ["smooth",   ["smooth random","smooth","drift","drifting","wander","wandering","slow random"]],
+  ["noise",    ["noise","jitter","chaos","chaotic","unstable"]],
+  ["hold",     ["hold","held","steady","still","static","unchanged","leave it","leave"]]
+];
+function shapeWord(v){
+  var t = String(v).trim().toLowerCase().replace(/\s+/g," ");
+  for (var i=0;i<SHAPES.length;i++)
+    if (SHAPES[i][1].indexOf(t) !== -1) return SHAPES[i][0];
+  return null;
+}
+
+/* Does this line look like a fumbled command rather than a sentence?
+
+   Only two signals, both hard to write by accident in prose: an equals sign,
+   which means a setting, and an arrow, which means a cable. An earlier version
+   also checked whether the first word was a known module, which sounds clever
+   until "let the tail run out" trips over the generic output module called
+   `out`. A heuristic that cries wolf on ordinary English is worse than none. */
+function looksLikeCommand(line){
+  return /=|->|>>|[pgtc]>|→/.test(line);
+}
+
+function addSets(sect, mod, str, ln, note, err){
+  str.split("|").forEach(function(chunk){
+    chunk = chunk.trim(); if (!chunk) return;
+    var eq = chunk.indexOf("=");
+    if (eq === -1) return err("<span class='mono'>"+esc(chunk)+
+      "</span> needs a value: <span class='mono'>name = value</span>.");
+    var name = chunk.slice(0,eq).trim(), val = chunk.slice(eq+1).trim();
+    var move = { kind:"set", mod:mod, name:name, note:note, line:ln, value:val };
+
+    var word = shapeWord(val);
+    if (word){ move.shape = word; move.behaviour = true; sect.moves.push(move); return; }
+
+    /* Any number of points, so a move can turn around: 10 to 50 to 10 to 90. */
+    var pts = val.split(/\s+to\s+|\s*(?:>|→)\s*/i).map(function(x){ return x.trim(); }).filter(Boolean);
+    if (pts.length > 1){
+      move.points = pts;
+      move.value = pts[pts.length-1];
+      move.shape = "poly";
+      move.ramp = true;
+    } else {
+      move.shape = "step";
+    }
+    sect.moves.push(move);
+  });
+}
+
+function num(v){
+  var m = String(v).match(/-?\d+(?:\.\d+)?/);
+  return m ? parseFloat(m[0]) : null;
+}
+
+/* Random shapes must be STABLE. A sample and hold that redraws differently on
+   every keystroke is noise in the interface, not information, so the wiggle is
+   seeded from the row it belongs to and never changes. */
+function seeded(str){
+  var h = 2166136261;
+  for (var i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return function(){ h = Math.imul(h ^ (h>>>15), 2246822507); h ^= h>>>13; return ((h>>>0)%1000)/1000; };
+}
+
+/* Every shape reduces to a list of points in a 0..1 box, plus whether to hold
+   each value flat until the next one. One renderer, nine vocabularies. */
+function points(shape, opts){
+  opts = opts || {};
+  var r = seeded(opts.seed || "x"), p = [], i, n;
+  switch (shape){
+    case "sine":
+      for (i=0;i<=32;i++) p.push([i/32, 0.5 - 0.45*Math.sin(i/32*Math.PI*4)]);
+      return { pts:p };
+    case "triangle":
+      return { pts:[[0,0.95],[0.25,0.05],[0.5,0.95],[0.75,0.05],[1,0.95]] };
+    case "square":
+      return { pts:[[0,0.95],[0,0.05],[0.25,0.05],[0.25,0.95],[0.5,0.95],[0.5,0.05],
+                    [0.75,0.05],[0.75,0.95],[1,0.95]] };
+    case "saw":
+      return { pts:[[0,0.95],[0.48,0.05],[0.5,0.95],[0.98,0.05],[1,0.5]] };
+    case "ramp-dn":
+      return { pts:[[0,0.05],[0.48,0.95],[0.5,0.05],[0.98,0.95],[1,0.5]] };
+    case "sh":
+      n = 6; for (i=0;i<n;i++) p.push([i/n, 0.08 + r()*0.84]);
+      p.push([1, p[p.length-1][1]]);
+      return { pts:p, hold:true };
+    case "smooth": {
+      n = 5; var raw = []; for (i=0;i<=n;i++) raw.push(0.12 + r()*0.76);
+      /* cosine interpolation between anchors, so it reads as wandering rather
+         than as a zigzag */
+      for (i=0;i<=40;i++){
+        var t = i/40*n, k = Math.floor(t), f = t-k;
+        var a2 = raw[Math.min(k,n)], b2 = raw[Math.min(k+1,n)];
+        var m = (1-Math.cos(f*Math.PI))/2;
+        p.push([i/40, a2*(1-m)+b2*m]);
+      }
+      return { pts:p };
+    }
+    case "noise":
+      for (i=0;i<=44;i++) p.push([i/44, 0.5 + (r()-0.5)*0.9]);
+      return { pts:p };
+    case "hold":
+      return { pts:[[0,0.5],[1,0.5]], dash:true };
+    case "poly": {
+      var vals = (opts.values||[]).map(num);
+      if (!vals.length || vals.some(function(v){ return v == null; }))
+        return { pts:[[0,0.5],[1,0.5]], dash:true };   /* words, not numbers: claim nothing */
+      var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+      var span = hi - lo || 1;
+      return { pts: vals.map(function(v, k){
+        return [vals.length===1?0.5:k/(vals.length-1), 0.95 - ((v-lo)/span)*0.9]; }) };
+    }
+    default:
+      return { pts:[[0,0.95],[0.42,0.95],[0.42,0.05],[1,0.05]] };   /* step */
+  }
+}
+
+/* Two modes. Fixed, for the section list and the key, where a glyph sits inline
+   with text. Fluid, for the grid, where it should fill whatever width the column
+   ends up with.
+
+   Fluid works by letting the viewBox stretch horizontally, which would normally
+   smear the stroke into different weights on the horizontal and vertical runs.
+   vector-effect="non-scaling-stroke" computes the stroke in device space
+   instead, so the line stays 1.4px however wide the column gets. Which is
+   exactly right for a score lane: a wider column means more room for the wave,
+   not a fatter one. */
+function glyph(shape, opts){
+  opts = opts || {};
+  var W = opts.w || 54, H = opts.h || 18, pad = 1.6;
+  var g = points(shape, opts);
+  var d = g.pts.map(function(pt, i){
+    var x = pad + pt[0]*(W-pad*2), y = pad + pt[1]*(H-pad*2);
+    if (i === 0) return "M"+x.toFixed(1)+" "+y.toFixed(1);
+    if (g.hold){
+      var py = pad + g.pts[i-1][1]*(H-pad*2);
+      return "L"+x.toFixed(1)+" "+py.toFixed(1)+" L"+x.toFixed(1)+" "+y.toFixed(1);
+    }
+    return "L"+x.toFixed(1)+" "+y.toFixed(1);
+  }).join(" ");
+  return '<svg class="gl'+(opts.fluid ? ' fluid' : '')+'"'+
+    (opts.fluid ? ' preserveAspectRatio="none"' : ' width="'+W+'"')+
+    ' height="'+H+'" viewBox="0 0 '+W+' '+H+'" aria-hidden="true">'+
+    '<path d="'+d+'" fill="none" stroke="currentColor" stroke-width="1.4" '+
+    'stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"'+
+    (g.dash ? ' stroke-dasharray="2.5 2.5"' : '')+'/></svg>';
+}
+
+/* -------------------------------------------------------------- rendering --- */
+/*
+   Two views of the same thing, because they answer different questions.
+
+   The GRID answers "what is different about this section", which is what you
+   want when writing. Values carry forward until something changes them, so an
+   unchanged cell is quiet and a changed one is loud.
+
+   The SECTIONS answer "what do I do next", which is what you want on a music
+   stand with your hands full.
+*/
+function render(){
+  var res = parse(document.getElementById("src").value);
+  drawMsgs(res);
+  var host = document.getElementById("out");
+
+  if (!res.sections.length){ host.innerHTML = emptyState(); return; }
+
+  /* Rows are anything that ever changes anywhere in the score. */
+  var rows = [], seen = {};
+  function row(key, label){
+    if (seen[key]) return seen[key];
+    var r = { key:key, label:label, cells:[] };
+    seen[key] = r; rows.push(r); return r;
+  }
+  res.sections.forEach(function(s, si){
+    s.moves.forEach(function(m){
+      if (m.kind === "set")
+        row(m.mod+"/"+m.name, m.mod+" "+m.name).cells[si] = {
+          shape: m.shape,
+          values: m.points,
+          text: m.points ? m.points.join(" → ") : m.value,
+          end: m.behaviour ? m.value : (m.points ? m.points[m.points.length-1] : m.value)
+        };
+      else if (m.kind === "mute")   row("mute/"+m.mod, m.mod).cells[si] = { shape:"step", text:"muted", end:"muted" };
+      else if (m.kind === "unmute") row("mute/"+m.mod, m.mod).cells[si] = { shape:"step", text:"on", end:"on" };
+      else if (m.kind === "patch")   row("c/"+m.from+">"+m.to, m.from+" → "+m.to).cells[si] = { shape:"step", text:"patched", end:"patched" };
+      else if (m.kind === "unpatch") row("c/"+m.from+">"+m.to, m.from+" → "+m.to).cells[si] = { shape:"step", text:"out", end:"out" };
+    });
+  });
+
+  var h = "";
+  if (rows.length){
+    /* Columns share the width evenly, so adding a section narrows them all
+       rather than pushing the table off the edge. Past the point where a column
+       would be too narrow to read a wave in, the table takes a minimum width and
+       the pane scrolls instead. */
+    var minW = 170 + res.sections.length * 118;
+    h += '<h2>Score</h2>'+
+      '<div class="gridwrap"><table class="grid" style="min-width:'+minW+'px"><thead><tr><th class="rowhead"></th>'+
+      res.sections.map(function(s){
+        return '<th>'+esc(s.name)+(s.when?'<span class="cue">'+esc(s.when)+'</span>':'')+'</th>';
+      }).join("")+'</tr></thead><tbody>';
+    rows.forEach(function(r){
+      h += '<tr><td class="rowhead">'+esc(r.label)+'</td>';
+      var carried = null;
+      res.sections.forEach(function(_, si){
+        var c = r.cells[si];
+        if (c == null){ h += '<td class="same">'+(carried==null?'':esc(carried))+'</td>'; return; }
+        h += '<td class="chg">'+glyph(c.shape, { values:c.values, seed:r.key, fluid:true })+
+             '<span class="gv">'+esc(c.text)+'</span></td>';
+        /* A ramp leaves the parameter at its END value, which is what carries on. */
+        carried = c.end;
+      });
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>'+
+      '<div class="key">'+
+        [["step","set and hold"],["poly","moves"],["sine","lfo"],["triangle","triangle"],
+         ["square","square"],["saw","rising"],["ramp-dn","falling"],["sh","stepped random"],
+         ["smooth","smooth random"],["noise","noise"],["hold","hold"]]
+        .map(function(k){
+          return '<span class="kitem">'+
+            glyph(k[0], { values:["0","1"], seed:k[0], w:40, h:14 })+esc(k[1])+'</span>';
+        }).join("")+'</div>';
+  }
+
+  h += '<h2>Sections</h2>';
+  res.sections.forEach(function(s){
+    h += '<div class="sect"><h3>'+esc(s.name)+'</h3>'+
+      (s.when ? '<div class="when">'+esc(s.when)+'</div>' : '');
+    if (!s.moves.length) h += '<div class="move plain"><span></span>'+
+      '<span class="note dir body">Nothing changes here.</span></div>';
+    s.moves.forEach(function(m){
+      var n = m.note ? ' <span class="note">'+esc(m.note)+'</span>' : '';
+      if (m.kind === "dir")
+        h += '<div class="move plain"><span></span><span class="dir body">'+esc(m.text)+n+'</span></div>';
+      else if (m.kind === "set"){
+        var lab = m.behaviour ? "shape" : (m.points ? "move" : "set");
+        var body = m.behaviour
+          ? esc(m.mod)+' '+esc(m.name)+' <b>'+esc(m.value)+'</b>'
+          : m.points
+            ? esc(m.mod)+' '+esc(m.name)+' '+m.points.map(function(x){ return '<b>'+esc(x)+'</b>'; }).join(' to ')
+            : esc(m.mod)+' '+esc(m.name)+' to <b>'+esc(m.value)+'</b>';
+        h += '<div class="move"><span class="verb '+lab+'">'+lab+'</span>'+
+             glyph(m.shape, { values:m.points, seed:m.mod+"/"+m.name, w:52, h:16 })+
+             '<span class="body">'+body+n+'</span></div>';
+      }
+      else if (m.kind === "mute" || m.kind === "unmute")
+        h += '<div class="move"><span class="verb mute">'+m.kind+'</span><span></span>'+
+             '<span class="body">'+esc(m.mod)+n+'</span></div>';
+      else
+        h += '<div class="move"><span class="verb '+m.kind+'">'+m.kind+'</span><span></span>'+
+             '<span class="body">'+esc(m.from)+' → '+esc(m.to)+n+'</span></div>';
+    });
+    h += '</div>';
+  });
+  host.innerHTML = h;
+}
+
+function drawMsgs(res){
+  var host = document.getElementById("msgs");
+  if (!res.errors.length){ host.innerHTML = ""; return; }
+  host.innerHTML = res.errors.map(function(e){
+    var cls = e.ok ? "ok" : (e.warn ? "warn" : "err");
+    return '<div class="msg '+cls+'"><b class="ln">'+e.line+'</b><span>'+e.msg+'</span></div>';
+  }).join("");
+}
+
+function emptyState(){
+  return '<div class="empty">'+
+    '<pre>INTRO:\n'+
+    '  * vcf: cutoff = 15% | resonance = 40%\n'+
+    '  * delay: mix = 0%\n'+
+    '  mute vca\n\n'+
+    'BUILD: a few minutes\n'+
+    '  * vcf: cutoff = 10 to 50 to 10 to 90   "three passes"\n'+
+    '  * lfo: rate = smooth random\n'+
+    '  patch lfo:tri &gt;&gt; vcf:cutoff\n'+
+    '  wait 8 bars\n\n'+
+    'PEAK:\n'+
+    '  * delay: feedback = stepped random\n'+
+    '  unpatch seq:gate -&gt; env:gate</pre>'+
+    '<h2>Syntax</h2>'+
+    '<table class="ref">'+
+    '<tr><td class="mono">NAME:</td><td>a section. Must start at the left margin. '+
+      'Anything after the colon is a timing cue, in whatever words you like.</td></tr>'+
+    '<tr><td class="mono">* mod: knob = value</td><td>set a knob. '+
+      '<span class="mono">|</span> separates several on one line, or start the next line with '+
+      '<span class="mono">|</span>.</td></tr>'+
+    '<tr><td class="mono">knob = a to b</td><td>a move. Chain as many as you like, '+
+      '<span class="mono">10 to 50 to 10 to 90</span>, and the shape gets drawn.</td></tr>'+
+    '<tr><td class="mono">knob = lfo</td><td>a behaviour, drawn as its wave. Also '+
+      '<span class="mono">triangle square saw rising falling stepped&nbsp;random '+
+      'smooth&nbsp;random noise hold</span>, and the obvious synonyms.</td></tr>'+
+    '<tr><td class="mono">patch a:b -&gt; c:d</td><td>make a connection. Any arrow the patch '+
+      'language takes.</td></tr>'+
+    '<tr><td class="mono">unpatch a:b -&gt; c:d</td><td>break one.</td></tr>'+
+    '<tr><td class="mono">mute mod</td><td>and <span class="mono">unmute</span>.</td></tr>'+
+    '<tr><td>anything else</td><td>a direction, in your own words.</td></tr>'+
+    '<tr><td class="mono">"note"</td><td>at the end of any line.</td></tr>'+
+    '<tr><td class="mono"># or //</td><td>a comment. Never shown.</td></tr>'+
+    '</table>'+
+    '<p class="hint">Values carry forward until something changes them, so a section only says '+
+      'what is different. Pick a patch above and the moves get checked against it.</p>'+
+    '</div>';
+}
+
+/* ------------------------------------------------------- expand a pane --- */
+/* Lifted from the patch page on purpose. Two panes, either can take the whole
+   window, Escape restores. Writing a score and reading one want different
+   amounts of room, and the reading view is the one you hand to someone. */
+var ICON_EXPAND = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">'+
+  '<path d="M6.5 2.5H2.5v4M9.5 2.5h4v4M6.5 13.5H2.5v-4M9.5 13.5h4v-4" fill="none" '+
+  'stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+var ICON_COLLAPSE = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">'+
+  '<path d="M2.5 6.5h4v-4M13.5 6.5h-4v-4M2.5 9.5h4v4M13.5 9.5h-4v4" fill="none" '+
+  'stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+var LS_UI = "patching-score-ui-v1";
+var ui = { focus:"", sidebar:480, msgs:150 };
+try { var u = JSON.parse(lsGet(LS_UI)); if (u) for (var k in u) ui[k] = u[k]; } catch(e){}
+function saveUI(){ lsSet(LS_UI, JSON.stringify(ui)); }
+function applyFocus(){
+  var L = document.getElementById("left"), R = document.getElementById("right"),
+      hs = document.getElementById("hsplit"),
+      be = document.getElementById("focused"), br = document.getElementById("focusr");
+  L.style.display = ui.focus === "score"  ? "none" : "flex";
+  R.style.display = ui.focus === "editor" ? "none" : "flex";
+  hs.style.display = ui.focus ? "none" : "block";
+  L.style.width   = ui.focus === "editor" ? "100%" : ui.sidebar + "px";
+  be.innerHTML = ui.focus === "editor" ? ICON_COLLAPSE : ICON_EXPAND;
+  br.innerHTML = ui.focus === "score"  ? ICON_COLLAPSE : ICON_EXPAND;
+  be.title = ui.focus === "editor" ? "Restore split view" : "Expand the editor (Esc to restore)";
+  br.title = ui.focus === "score"  ? "Restore split view" : "Expand the score (Esc to restore)";
+}
+function applyLayout(){
+  document.getElementById("msgs").style.height = ui.msgs + "px";
+  applyFocus();
+}
+function setFocus(which){ ui.focus = ui.focus === which ? "" : which; applyLayout(); saveUI(); }
+
+/* Lifted from the patch page, same feel and the same clamps, so a habit learned
+   on one page works on the other. */
+function splitter(id, horizontal){
+  var el = document.getElementById(id), start = null;
+  el.addEventListener("mousedown", function(ev){
+    ev.preventDefault();
+    start = { x:ev.clientX, y:ev.clientY, sidebar:ui.sidebar, msgs:ui.msgs };
+    el.classList.add("dragging");
+    document.body.style.cursor = horizontal ? "col-resize" : "row-resize";
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  });
+  function move(ev){
+    if (!start) return;
+    if (horizontal)
+      ui.sidebar = Math.max(280, Math.min(window.innerWidth - 320,
+        start.sidebar + (ev.clientX - start.x)));
+    else
+      ui.msgs = Math.max(0, Math.min(window.innerHeight - 220,
+        start.msgs - (ev.clientY - start.y)));
+    applyLayout();
+  }
+  function up(){
+    document.removeEventListener("mousemove", move);
+    document.removeEventListener("mouseup", up);
+    el.classList.remove("dragging"); document.body.style.cursor = "";
+    start = null; saveUI();
+  }
+}
+splitter("hsplit", true);
+splitter("vsplit", false);
+document.getElementById("focused").addEventListener("click", function(){ setFocus("editor"); });
+document.getElementById("focusr").addEventListener("click", function(){ setFocus("score"); });
+/* Escape does ONE thing per press, most-nested first: close a sheet, else close
+   a menu, else leave full-width. Same order as the patch page. */
+document.addEventListener("keydown", function(ev){
+  if (ev.key !== "Escape") return;
+  if (document.getElementById("veil").classList.contains("on")) return closeSheet();
+  if (document.querySelector(".menu.open")) return closeMenus();
+  if (!ui.focus) return;
+  ui.focus = ""; applyLayout(); saveUI();
+});
+
+/* ------------------------------------------------------------------ boot --- */
+/* Which patch this score is written against. It belongs to the SCORE, not to
+   the browser: two scores for two different patches is the normal case, and a
+   global setting would silently check one against the other. */
+function paintPatches(){
+  var sel = document.getElementById("patchsel");
+  var keys = Object.keys(patches);
+  sel.innerHTML = '<option value="">no patch, no checking</option>' +
+    keys.map(function(k){
+      return '<option value="'+esc(k)+'"'+(k===score.patchId?" selected":"")+'>'+
+        esc(patches[k].name || "Untitled")+'</option>';
+    }).join("");
+  if (!keys.length) sel.title = "No patches found. Make one on the Patch page.";
+}
+document.getElementById("patchsel").addEventListener("change", function(){
+  score.patchId = this.value;
+  patch = patches[this.value] || null;
+  facts = patchFacts(patch);
+  save(); paintList(); render();
+});
+
+/* --------------------------------------------------------------- the list --- */
+function paintList(){
+  var sel = document.getElementById("slist");
+  sel.innerHTML = scoreIds().map(function(k){
+    var s = getScore(k), tag = isEdited(k) ? " ·edited" : (fromFile(k) ? " ·file" : "");
+    return '<option value="'+esc(k)+'"'+(k===score.id?" selected":"")+'>'+
+      esc(s.name || "Untitled score")+esc(tag)+'</option>';
+  }).join("");
+
+  var badge = document.getElementById("sstate");
+  badge.className = isEdited(score.id) ? "edited" : (fromFile(score.id) ? "file" : "");
+  badge.textContent = badge.className;
+  badge.title = isEdited(score.id)
+    ? "Changed from the copy in scores/scores.js. File → Revert to file puts it back."
+    : (fromFile(score.id) ? "Exactly as it is in scores/scores.js." : "");
+
+  document.getElementById("brevert").style.display = isEdited(score.id) ? "" : "none";
+  var del = document.getElementById("bdel");
+  del.disabled = fromFile(score.id);
+  del.title = fromFile(score.id) ? "This score lives in scores/scores.js. Remove it there." : "";
+
+  var n = scoreIds().length;
+  document.getElementById("stat").textContent =
+    n + " score" + (n===1?"":"s") + (STORAGE_OK ? "" : " · not saving, export to keep");
+}
+
+document.getElementById("slist").addEventListener("change", function(){
+  save(); showScore(getScore(this.value)); save(); paintPatches(); paintList(); render();
+});
+document.getElementById("sname").addEventListener("input", function(){
+  score.name = this.value; save(); paintList();
+});
+document.getElementById("bnew").addEventListener("click", function(){
+  save(); var ns = newScore(); store.scores[ns.id] = ns;
+  showScore(ns); save(); paintPatches(); paintList(); render();
+});
+document.getElementById("bdup").addEventListener("click", function(){
+  save();
+  var c = cloneScore(score); c.id = newScore().id; c.name = uniqueName((score.name||"Untitled")+" copy");
+  store.scores[c.id] = c;
+  showScore(c); save(); paintPatches(); paintList(); render();
+});
+document.getElementById("brevert").addEventListener("click", function(){
+  if (!isEdited(score.id)) return;
+  if (!confirm("Throw away your changes to “"+(score.name||"Untitled score")+
+               "” and go back to the copy in scores/scores.js?")) return;
+  delete store.scores[score.id];
+  showScore(getScore(score.id));
+  save(); paintPatches(); paintList(); render();
+});
+document.getElementById("bdel").addEventListener("click", function(){
+  if (fromFile(score.id)) return;
+  if (scoreIds().length < 2){ alert("That's the only score, so there's nothing to fall back to."); return; }
+  if (!confirm("Delete “"+(score.name||"Untitled score")+"”?")) return;
+  delete store.scores[score.id];
+  showScore(getScore(scoreIds()[0]));
+  save(); paintPatches(); paintList(); render();
+});
+function uniqueName(base){
+  var taken = {}, n = 2, name = base;
+  allScores().forEach(function(s){ taken[s.name] = 1; });
+  while (taken[name]) name = base + " " + (n++);
+  return name;
+}
+
+var t = null;
+document.getElementById("src").addEventListener("input", function(){
+  score.src = this.value;
+  clearTimeout(t);
+  t = setTimeout(function(){ render(); save(); paintList(); }, 160);
+});
+
+/* ------------------------------------------------------ export and import --- */
+function scoreOut(s){
+  var o = { id:s.id, name:s.name || "Untitled score", src:s.src || "" };
+  if (s.patchId) o.patchId = s.patchId;
+  return o;
+}
+function exportSource(){
+  return [
+    "// Your scores, written by Patching.",
+    "// Drop this in as scores/scores.js. score.html reads it automatically.",
+    "//",
+    "// Anything you then change in the app is kept in browser storage and",
+    "// overrides what's here, matched by id. File → Revert to file throws the",
+    "// change away. Nothing here is ever written by the app.",
+    "",
+    "window.SCORE_FILES = window.SCORE_FILES || [];",
+    "window.SCORE_FILES.push({",
+    ' id: "scores",',
+    ' name: "My scores",',
+    " scores: " + JSON.stringify(allScores().map(scoreOut), null, 1),
+    "});",
+    ""
+  ].join("\n");
+}
+document.getElementById("ball").addEventListener("click", function(){
+  save();
+  var src = exportSource(), n = allScores().length;
+  openSheet(
+    '<h3>Export all scores</h3>'+
+    '<div style="color:var(--ink2);margin-bottom:10px;max-width:64ch">'+
+      'Save it as <span class="mono">scores/scores.js</span>. score.html reads that file at boot, '+
+      'so there is nothing else to set up.<br><br>'+
+      (STORAGE_OK
+        ? 'Browser storage is one browser on one machine. The file survives clearing your browsing '+
+          'data, moves to another computer, and can go in a repo.'
+        : '<b style="color:var(--bad)">This browser is not storing anything.</b> Exporting is the '+
+          'only way to keep any of it.')+
+      '<br><br>Dropping it back in doesn\'t duplicate anything: each score carries its id.'+
+    '</div>'+
+    '<div class="row">'+
+      '<button id="dlall" class="primary">Download scores.js</button>'+
+      '<button id="cpall">Copy</button>'+
+    '</div>'+
+    '<div style="color:var(--ink3);margin:10px 0 4px">'+n+' score'+(n===1?'':'s')+'</div>'+
+    '<textarea readonly id="allbox"></textarea>'
+  );
+  document.getElementById("allbox").value = src;
+  document.getElementById("dlall").onclick = function(){ download("scores.js", src); };
+  document.getElementById("cpall").onclick = function(){
+    var ta = document.getElementById("allbox"); ta.select();
+    try { document.execCommand("copy"); } catch(e){}
+  };
+});
+document.getElementById("btxt").addEventListener("click", function(){
+  save();
+  download(slug(score.name || "score") + ".txt", score.src || "");
+});
+
+/* The equivalent of Export SVG on the patch page: the rendered thing, in one
+   file, openable and printable with nothing serving it.
+
+   HTML rather than SVG because the score is a grid of text, and text in SVG
+   does not wrap, does not reflow to paper and does not select. The patch
+   diagram is a drawing, so SVG is right there and wrong here.
+
+   The page's own stylesheet is copied in whole and then overridden, rather than
+   cherry-picked. Picking out the rules the score happens to use would silently
+   rot the moment one is renamed. */
+function exportPage(){
+  var styleEl = document.querySelector("style");
+  var css = styleEl ? styleEl.textContent : "";
+
+  var when = new Date().toISOString().slice(0, 10);
+  var name = score.name || "Untitled score";
+  var against = score.patchId && patches[score.patchId]
+    ? (patches[score.patchId].name || "Untitled patch") : null;
+
+  return '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'+
+    '<meta name="viewport" content="width=device-width,initial-scale=1">\n'+
+    '<title>'+esc(name)+'</title>\n<style>\n'+ css +
+    /* Turn the app shell back into a document. */
+    '\nhtml,body{height:auto; overflow:visible; display:block; background:#fff}\n'+
+    '#doc{max-width:900px; margin:0 auto; padding:26px 30px 60px}\n'+
+    '#doc h1{font-size:19px; margin:0 0 2px; font-weight:650; letter-spacing:-.01em}\n'+
+    '#doc .meta{color:var(--ink3); font-size:12px; margin-bottom:18px}\n'+
+    '#doc .gridwrap{overflow:visible}\n'+
+    '@media print{\n'+
+    '  @page{margin:14mm}\n'+
+    '  body{background:#fff}\n'+
+    '  #doc{max-width:none; padding:0}\n'+
+    '  .sect{break-inside:avoid; page-break-inside:avoid}\n'+
+    '  .gridwrap{break-inside:avoid; page-break-inside:avoid}\n'+
+    '}\n</style>\n</head>\n<body>\n<div id="doc">\n'+
+    '<h1>'+esc(name)+'</h1>\n'+
+    '<div class="meta">'+(against ? "Against "+esc(against)+" · " : "")+esc(when)+'</div>\n'+
+    document.getElementById("out").innerHTML +
+    '\n</div>\n</body>\n</html>\n';
+}
+function doExportPage(){
+  save();
+  download(slug(score.name || "score") + ".html", exportPage());
+}
+document.getElementById("bexport").addEventListener("click", doExportPage);
+document.getElementById("bexportm").addEventListener("click", doExportPage);
+document.getElementById("bimport").addEventListener("click", function(){
+  document.getElementById("file").click();
+});
+document.getElementById("file").addEventListener("change", function(){
+  var f = this.files[0]; this.value = "";
+  if (!f) return;
+  var r = new FileReader();
+  r.onload = function(){
+    var list;
+    try { list = parseImport(r.result, f.name); }
+    catch(e){ alert("That didn't parse as a score file: " + e.message); return; }
+    if (!list.length){ alert("No scores in that file."); return; }
+    offerImport(list, f.name);
+  };
+  r.readAsText(f);
+});
+/* One import for every shape: a scores.js, a bare array, a single score JSON,
+   or a plain .txt of score source. Which one it is is our problem. */
+function parseImport(txt, name){
+  if (/\.txt$/i.test(name || "") && !/^\s*[\[{]/.test(txt))
+    return [{ id:null, name:(name||"Imported").replace(/\.txt$/i,""), src:txt, patchId:"" }];
+  var j;
+  if (/^\s*[\[{]/.test(txt)) j = JSON.parse(txt);
+  else {
+    var m = txt.match(/scores:\s*(\[[\s\S]*?\])\s*\n\}\);/);
+    if (!m) throw new Error("no scores found");
+    j = JSON.parse(m[1]);
+  }
+  var arr = Array.isArray(j) ? j : (j.scores || [j]);
+  return arr.filter(function(s){ return s && s.src; }).map(function(s){
+    return { id:s.id || null, name:s.name || "Imported score",
+             src:s.src, patchId:s.patchId || "" };
+  });
+}
+function offerImport(list, fname){
+  var clash = list.filter(function(s){ return s.id && (store.scores[s.id] || FILES[s.id]); });
+  if (!clash.length) return doImport(list, "copy");
+  openSheet(
+    '<h3>Already here</h3>'+
+    '<div style="color:var(--ink2);margin-bottom:10px;max-width:64ch">'+
+      esc(fname || "That file")+' has '+list.length+' score'+(list.length===1?'':'s')+', and '+
+      clash.length+' of them '+(clash.length===1?'has':'have')+' an id you already have. '+
+      '<b>Update</b> if this is your own export coming back, <b>Add copies</b> if it came from '+
+      'someone else.'+
+    '</div>'+
+    '<div class="row">'+
+      '<button id="impupd" class="primary">Update '+clash.length+'</button>'+
+      '<button id="impcopy">Add as copies</button>'+
+      '<button id="impskip">Skip '+(clash.length===1?'it':'them')+'</button>'+
+    '</div>'
+  );
+  document.getElementById("impupd").onclick  = function(){ doImport(list, "update"); };
+  document.getElementById("impcopy").onclick = function(){ doImport(list, "copy"); };
+  document.getElementById("impskip").onclick = function(){ doImport(list, "skip"); };
+}
+function doImport(list, mode){
+  save();
+  var last = null;
+  list.forEach(function(s){
+    var exists = s.id && (store.scores[s.id] || FILES[s.id]);
+    if (exists && mode === "skip") return;
+    var ns;
+    if (exists && mode === "update") ns = cloneScore(s);
+    else { ns = cloneScore(s); ns.id = newScore().id; if (exists) ns.name = uniqueName(s.name); }
+    store.scores[ns.id] = ns; last = ns;
+  });
+  if (last) showScore(last);
+  save(); closeSheet(); paintPatches(); paintList(); render();
+}
+
+function download(name, text){
+  var blob = new Blob([text], {type:"text/plain"});
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+}
+function slug(s){
+  return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+}
+
+/* ---------------------------------------------------------------- sheets --- */
+function openSheet(html){
+  document.getElementById("sheet").innerHTML = html;
+  document.getElementById("veil").classList.add("on");
+}
+function closeSheet(){ document.getElementById("veil").classList.remove("on"); }
+document.getElementById("veil").addEventListener("click", function(ev){
+  if (ev.target.id === "veil") closeSheet();
+});
+
+/* Menus. One open at a time, and clicking an item closes it. */
+function closeMenus(){
+  [].forEach.call(document.querySelectorAll(".menu.open"), function(m){ m.classList.remove("open"); });
+}
+document.addEventListener("click", function(ev){
+  var opener = ev.target.closest ? ev.target.closest("[data-open]") : null;
+  if (opener){
+    var m = opener.parentNode, was = m.classList.contains("open");
+    closeMenus(); if (!was) m.classList.add("open");
+    return;
+  }
+  if (ev.target.closest && ev.target.closest(".dropdown")){ setTimeout(closeMenus, 0); return; }
+  closeMenus();
+});
+
+/* ------------------------------------------------------------------ help --- */
+var REPO = "https://github.com/ubertv/patching";
+var VERSION = "0.1.0";   /* bump all three together */
+
+document.getElementById("bhelp").addEventListener("click", function(){
+  openSheet(
+    '<h3>Score syntax</h3>'+
+    '<div style="color:var(--ink2);line-height:1.65;max-width:64ch">'+
+      '<p style="margin-top:0">A score is a list of named sections and what you change to get '+
+      'into each one. The unit is the move, not the minute.</p>'+
+      '<p>Pick a patch in <b>Against</b> and every module, jack and cable in the score is checked '+
+      'against it. Leave it unset and the score still parses, it just cannot be checked.</p>'+
+    '</div>'+
+
+    '<h3 style="margin-top:18px">Lines</h3>'+
+    '<div class="keys">'+
+      '<div class="mono">NAME:</div><div>A section. Must start at the left margin. Anything after the colon is a timing cue, in whatever words you like.</div>'+
+      '<div class="mono">* mod: knob = value</div><div>Set a knob. <span class="mono">|</span> separates several on one line, or start the next line with <span class="mono">|</span>.</div>'+
+      '<div class="mono">patch a:b -&gt; c:d</div><div>Make a connection. Any arrow the patch language takes.</div>'+
+      '<div class="mono">unpatch a:b -&gt; c:d</div><div>Break one. Checked against the bound patch: you can only unplug something that is plugged in.</div>'+
+      '<div class="mono">mute mod</div><div>And <span class="mono">unmute</span>.</div>'+
+      '<div class="mono">anything else</div><div>A direction, in words. A leading <span class="mono">&gt;</span> is optional. Prose is the common case, so it is never an error.</div>'+
+      '<div class="mono">"note"</div><div>At the end of any line. Attaches to that move.</div>'+
+    '</div>'+
+
+    '<h3 style="margin-top:18px">Values</h3>'+
+    '<div style="color:var(--ink2);margin-bottom:8px;max-width:64ch">'+
+      'A value is a place, a journey, or a behaviour. The score carries the <i>shape</i> of a '+
+      'move, not only where it ends up: a number says the filter is at 60%, a shape says it is '+
+      'being wobbled, or walked, or held. That is the part you cannot reconstruct six months later.'+
+    '</div>'+
+    '<div class="keys">'+
+      '<div class="mono">cutoff = 60%</div><div>A step. Get there and stay there.</div>'+
+      '<div class="mono">cutoff = 15% to 60%</div><div>A ramp.</div>'+
+      '<div class="mono">cutoff = 10 to 50 to 10 to 90</div><div>A shape. Any number of points, so a move can turn around.</div>'+
+      '<div class="mono">cutoff = lfo</div><div>A behaviour, drawn as its wave. Also <span class="mono">triangle square saw rising falling stepped random smooth random noise hold</span>, and the obvious synonyms.</div>'+
+    '</div>'+
+
+    '<h3 style="margin-top:18px">Limits</h3>'+
+    '<div style="color:var(--ink2);line-height:1.65;max-width:64ch">'+
+      '<p style="margin-top:0">Timing is free text and is never interpreted. <span class="mono">a few '+
+      'minutes</span> and <span class="mono">on a phrase boundary</span> are both fine and both '+
+      'mean nothing to the app.</p>'+
+      '<p>A role you mistype is not an error. <span class="mono">vcf#laed</span> is a valid name, '+
+      'so the only thing that catches it is the "isn\'t in this patch" warning, and only once a '+
+      'patch is bound.</p>'+
+      '<p>There is no undo.</p>'+
+    '</div>'+
+    '<div class="row"><button id="helpclose" class="primary">Close</button></div>'
+  );
+  document.getElementById("helpclose").onclick = closeSheet;
+});
+
+document.getElementById("babout").addEventListener("click", function(){
+  openSheet(
+    '<h3>Score</h3>'+
+    '<div style="color:var(--ink2);line-height:1.65;max-width:56ch">'+
+      '<p style="margin-top:0">Score is experimental. It is an idea, not a finished thing.</p>'+
+      '<p style="color:var(--ink3);font-size:12px">Version '+VERSION+'</p>'+
+      '<p style="color:var(--ink3);font-size:12px">'+
+      '<a href="'+REPO+'" target="_blank" rel="noopener">github.com/ubertv/patching</a></p>'+
+    '</div>'+
+    '<div class="row"><button id="aboutclose" class="primary">Close</button></div>'
+  );
+  document.getElementById("aboutclose").onclick = closeSheet;
+});
+
+boot();
+function boot(){
+  /* showScore first: paintPatches marks the bound patch selected, and it can
+     only do that once it knows which score is open. */
+  showScore(score);
+  paintPatches();
+  paintList();
+  applyFocus();
+  render();
+  save();   /* so a freshly created score survives a reload even if you never type */
+}
+
+
+/* ------------------------------------------------------------------ theme ---
+   The choice is shared with the other two pages and set on <html> before first
+   paint by the script in <head>. This only handles the toggle. */
+var LS_THEME = "patching-theme-v1";
+document.getElementById("btheme").addEventListener("click", function(){
+  var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem(LS_THEME, next); } catch(e){}
+});
+
+})();
+</script>
+</body>
+</html>
