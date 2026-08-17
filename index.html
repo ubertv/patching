@@ -449,7 +449,8 @@ vca:out -> delay:in &quot;a note on the cable&quot;"></textarea>
         <button id="zout" title="Zoom out">&minus;</button>
         <span id="zoomlvl">100%</span>
         <button id="zin" title="Zoom in">+</button>
-        <button id="zfit">Fit width</button>
+        <button id="zfit" title="Scale down until the width fits">Fit width</button>
+        <button id="zfitpage" title="Scale down until the whole diagram fits">Fit page</button>
         <button id="z100">100%</button>
         <div class="vrule"></div>
         <button id="btidy" title="Arrange the boxes by signal flow">Auto layout</button>
@@ -1342,6 +1343,13 @@ function build(){
   list.forEach(function(n){ n._feeds = {}; });
   edges.forEach(function(e){ e.a._feeds[e.b.key] = 1; });
 
+  /* If far more modules arrived than were already placed, the patch you
+     arranged is not the patch you now have, and threading the new ones in one
+     at a time produces a mess. Lay the whole thing out instead. */
+  var unplaced = list.filter(function(n){ return !patch.pos[n.key]; }).length;
+  var already = list.length - unplaced;
+  if (unplaced >= 6 && unplaced > already) pendingLayout = true;
+
   if (pendingLayout || !Object.keys(patch.pos).length){
     /* No saved positions means a patch that was just loaded or pasted whole, so
        arranging it is welcome rather than intrusive. */
@@ -1536,10 +1544,27 @@ function backEdges(nodes, edges){
 
 /* How many columns before wrapping to a new row. Derived from the pane so the
    result actually fits without scrolling, clamped so rows stay readable. */
+/* How tall a single column is allowed to get before it is split. The pane you
+   are looking at, so a column fits on screen, with a floor for a short window
+   and a ceiling so a tall monitor doesn't produce one endless stack. */
+function columnBudget(){
+  var pane = document.getElementById("right");
+  var h = (pane && pane.clientHeight) || 900;
+  return Math.max(700, Math.min(1600, h - 80));
+}
+
 function wrapWidth(){
   var pane = document.getElementById("right");
-  var fits = Math.floor(((pane ? pane.clientWidth : 1200) - 70) / (BOXW + GAPX));
-  return Math.max(4, Math.min(6, fits || 6));
+  /* n columns occupy n boxes and n-1 gaps, not n of each: the trailing gap was
+     being charged for and cost a column at most window sizes. */
+  var avail = (pane ? pane.clientWidth : 1200) - 70 + GAPX;
+  var fits = Math.floor(avail / (BOXW + GAPX));
+  /* Use the width there is. This used to cap at six columns however wide the
+     window, which on a large monitor left a third of the page empty while the
+     diagram ran off the bottom. The old floor of four did the opposite on a
+     narrow pane, forcing a row wider than the space and guaranteeing a
+     horizontal scrollbar. */
+  return Math.max(2, fits || 5);
 }
 
 function autoLayout(nodes, edges){
@@ -1581,9 +1606,32 @@ function autoLayout(nodes, edges){
     });
   }
 
+  var perRow = wrapWidth(), GAPY = 26, GUTTER = 66;
+
+  /* Split any column too tall to look at. A rank holding fifty modules — which
+     is what you get the moment a patch has a dozen parallel voices, since every
+     oscillator and every envelope is a source and shares rank 0 — becomes one
+     column five thousand pixels tall. Wrapping columns into rows does nothing
+     about that: the row is as tall as its tallest column. No zoom fixes it
+     either, because fitting the width barely scales anything while the height
+     runs off the screen.
+
+     So a fat column becomes several side-by-side stacks. They are all the same
+     rank, so nothing flows between them and splitting costs no legibility: the
+     diagram grows across the page instead of down it. */
+  var budget = columnBudget();
+  var split = [];
+  cols.forEach(function(c){
+    var total = c.reduce(function(t, n){ return t + n.h + GAPY; }, -GAPY);
+    if (c.length < 2 || total <= budget){ split.push(c); return; }
+    var parts = Math.ceil(total / budget);
+    var per = Math.ceil(c.length / parts);
+    for (var k = 0; k < c.length; k += per) split.push(c.slice(k, k + per));
+  });
+  cols = split;
+
   /* Wrap into rows, like a paragraph. Each row gets a gutter beneath it wide
      enough for the continuation cable to travel back to the left margin. */
-  var perRow = wrapWidth(), GAPY = 26, GUTTER = 66;
   var rows = [];
   for (var i = 0; i < cols.length; i += perRow) rows.push(cols.slice(i, i + perRow));
 
@@ -1618,8 +1666,20 @@ function placeNew(n, placed){
     var fy = feeders.reduce(function(t, p){ return t + p.y; }, 0) / feeders.length;
     return { x: Math.round((fx + GAPX) / 10) * 10, y: Math.round(fy / 10) * 10 };
   }
-  var right = placed.length ? Math.max.apply(null, placed.map(function(p){ return p.x + p.w; })) : 0;
-  return { x: right ? right + GAPX : 30, y: 40 };
+  if (!placed.length) return { x: 30, y: 40 };
+
+  /* A module with no feeder yet used to go to the right of everything, on one
+     line, forever. Adding a couple that way is fine; typing a dozen voices gave
+     a canvas twenty thousand pixels wide and three hundred tall, which zoom
+     cannot rescue because the floor is reached long before it fits. Wrap into
+     rows the same width the layout uses. */
+  var limit = 30 + wrapWidth() * (BOXW + GAPX);
+  var right = Math.max.apply(null, placed.map(function(p){ return p.x + p.w; }));
+  if (right + GAPX + BOXW <= limit)
+    return { x: Math.round((right + GAPX) / 10) * 10, y: 40 };
+
+  var bottom = Math.max.apply(null, placed.map(function(p){ return p.y + p.h; }));
+  return { x: 30, y: Math.round((bottom + GAPY) / 10) * 10 };
 }
 
 function portY(node, side, jid){
@@ -3256,9 +3316,14 @@ document.getElementById("babout").addEventListener("click", function(){
       '<p>Inspired by '+
       '<a href="https://github.com/SpektroAudio/PatchBook" target="_blank" rel="noopener">PatchBook</a>, '+
       'and it reads and writes an extended version of that markup. Not affiliated with it.</p>'+
-      '<p>Comes with a library of generic modules and some of the more popular real ones. '+
-      'You can add your own.</p>'+
-      '<p style="color:var(--ink3);font-size:12px">No build step, no dependencies, no need for a server, but host it yourself if you like</p>'+
+      '<p>Comes with 32 generic modules for sketching and 18 real ones, every jack read from '+
+      'a manual or a panel photograph. Add your own on the Modules page.</p>'+
+      (hosted()
+        ? '<p>Use it here and your work stays in this browser, on this machine. Or '+
+          '<a href="'+REPO+'" target="_blank" rel="noopener">take a copy from the repo</a> '+
+          'and run it off your own disk, where patches are files you keep.</p>'
+        : '<p>Three HTML files and some data. No build step, no dependencies, and no server '+
+          'needed, though it works just as well on one.</p>')+
     '</div>'+
     '<div class="keys" style="margin-top:14px">'+
       '<div style="color:var(--ink3)">Version</div><div>'+VERSION+'</div>'+
@@ -3404,14 +3469,29 @@ function applyZoom(){
   if (lbl) lbl.textContent = Math.round(ui.zoom * 100) + "%";
 }
 function setZoom(z){ ui.zoom = Math.max(0.2, Math.min(3, z)); applyZoom(); saveUI(); }
+/* Never magnify. Fitting is for getting a diagram that is too big onto the
+   screen; blowing a four-module patch up to 131% because there is room is not
+   what anyone means by fit, and the zoom then sticks around for the next patch
+   you type. */
 function fitWidth(){
   var pane = document.getElementById("right");
-  if (view.w) setZoom((pane.clientWidth - 46) / view.w);
+  if (view.w) setZoom(Math.min(1, (pane.clientWidth - 46) / view.w));
+}
+
+/* Fit width is the wrong tool when the diagram is taller than it is wide, which
+   is what a patch with many parallel voices looks like: it barely scales and
+   you still scroll three screens. */
+function fitPage(){
+  var pane = document.getElementById("right");
+  if (!view.w || !view.h) return;
+  setZoom(Math.min(1, (pane.clientWidth - 46) / view.w,
+                      (pane.clientHeight - 60) / view.h));
 }
 document.getElementById("zin").addEventListener("click", function(){ setZoom(ui.zoom * 1.25); });
 document.getElementById("zout").addEventListener("click", function(){ setZoom(ui.zoom / 1.25); });
 document.getElementById("z100").addEventListener("click", function(){ setZoom(1); });
 document.getElementById("zfit").addEventListener("click", fitWidth);
+document.getElementById("zfitpage").addEventListener("click", fitPage);
 
 /* ---------------------------------------------------------------------- boot --- */
 

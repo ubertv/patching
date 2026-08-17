@@ -346,7 +346,7 @@ function load(key, fallback){
    README: Firefox refuses localStorage on file:// URLs outright, as a
    deliberate security measure. Chrome and Safari allow it but treat every
    file:// page as ONE origin, so two copies of this app in different folders
-   share — and can clobber — each other's storage.
+   read and write the same storage, and the second one to save wins.
 
    So we probe rather than assume. If storage isn't writable the app still works
    completely; it just can't remember anything by itself, and says so instead of
@@ -1289,9 +1289,13 @@ document.getElementById("babout").addEventListener("click", function(){
     '<div style="color:var(--ink2);line-height:1.65;max-width:60ch">'+
       '<p style="margin-top:0"><b>Signal flow diagrams for modular synthesizers.</b> '+
       'This page decides which modules the patch tool offers, and lets you add your own.</p>'+
-      '<p>Modules come from libraries: plain files in <span class="mono">lib/</span> that the '+
-      'app loads. Library modules are read-only; duplicate one to change it, so updating a '+
-      'library file never clobbers your work.</p>'+
+      '<p>Modules come from <span class="mono">lib/library.js</span>, a plain file the app '+
+      'loads at boot. Any other file you drop into <span class="mono">lib/</span> is picked '+
+      'up the same way.</p>'+
+      '<p>You can edit anything, including the modules that ship. The file is never written: '+
+      'your change is kept in this browser and layered over it, so <b>Revert to file</b> '+
+      'brings the original back, and pulling a newer library gives you the newer version of '+
+      'everything you have not touched.</p>'+
       '<p style="color:var(--ink3);font-size:12px">Version '+VERSION+'. No build step, no dependencies. MIT licensed. '+
       'Source at <a href="'+REPO+'" target="_blank" rel="noopener">github.com/ubertv/patching</a>.</p>'+
     '</div>'+

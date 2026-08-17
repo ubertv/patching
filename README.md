@@ -135,6 +135,9 @@ selected module moves the whole selection. Esc deselects.
 Positions belong to the patch and save as you go. There is no undo, so **Auto layout** is the way
 back.
 
+**Fit width** and **Fit page** above the diagram both only ever scale down. Fit width is for
+reading a wide diagram top to bottom; Fit page is for seeing all of a tall one at once.
+
 ### The guide
 
 **Guide**, next to **Diagram** above the canvas, is the same patch written as instructions for

@@ -22,6 +22,43 @@ Saving a file, made to feel like saving a file.
 
 ### Fixed
 
+- **Typing a big patch produced a canvas 21572 pixels wide and 366 tall.** A
+  module with no already-placed feeder went to the right of everything, on one
+  line, with no end to the line. That is fine for adding one module to a patch
+  you have arranged and useless for typing a dozen voices, and it is the case
+  where zoom appears to scale the canvas but not the modules: fitting a 21572
+  pixel width hits the 20% floor long before it fits, so the sheet shrinks and
+  the modules become specks. New modules now wrap into rows, and when far more
+  arrive than were already placed the whole patch is laid out instead, because
+  at that point it is not the patch you arranged any more. Same input, now
+  1386 by 2294.
+
+- **Fit width magnified small diagrams.** It scaled a four-module patch up to
+  131% because there was room, and that zoom stuck for whatever you typed next.
+  Fitting now only ever scales down.
+
+- **Added Fit page**, next to Fit width. Fitting the width does almost nothing
+  for a diagram that is twice as tall as it is wide; the same patch goes from
+  100% to 35% and is visible in one screen.
+
+- **A big patch became an unreadable ribbon.** Auto layout ignored the window:
+  it capped at six columns however wide the screen, and nothing split a column
+  that grew too tall. Twelve parallel voices put every oscillator, envelope and
+  LFO at the same rank, so 95 modules made one column 54 deep and a canvas
+  1106 by 5105, which no amount of zooming helps because fitting the width
+  barely scales anything while the height runs off the bottom. Columns now split
+  into side-by-side stacks when they outgrow the pane, the column count follows
+  the width you actually have, and the width sum no longer charges for a gap
+  after the last column. The same patch is now 1386 by 2372 on a laptop and
+  2226 by 2154 on a large monitor.
+
+- **The modules About page described a rule the app doesn't have.** It said
+  library modules were read-only and you had to duplicate one to change it.
+  There has been an Edit button on every module for some time; a change is kept
+  as an override layered over the file, which **Revert to file** undoes. Also
+  says what the storage actually does rather than that an update might "clobber"
+  your work.
+
 - **Export told hosted visitors to do something impossible.** On a public site
   the sheet said to save the file as `patches/patches.js` and that the app reads
   it at boot. A visitor cannot write to someone else's server, so that was an
