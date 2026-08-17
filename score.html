@@ -1166,8 +1166,15 @@ document.getElementById("ball").addEventListener("click", function(){
       'until you close the tab and then it is gone. Exporting is the only way to keep any '+
       'of it. Serving the folder over <span class="mono">http://localhost</span> avoids the '+
       'problem entirely.</div>')+
-    '<div class="xdo">Save it as <span class="mono">scores/scores.js</span></div>'+
-    '<div class="xwhere">score.html reads that file at boot. Nothing else to set up.'+(canPick() ? ' The dialogue lets you save it straight into place.' : '')+'</div>'+
+    '<div class="xdo">'+(hosted()
+      ? 'Keep this file somewhere you will find it again'
+      : 'Save it as <span class="mono">scores/scores.js</span>')+'</div>'+
+    '<div class="xwhere">'+(hosted()
+      ? 'It is your only copy outside this browser. <b>File \u2192 Import\u2026</b> reads it back. '+
+        'For the version where the file sits in a folder and loads itself, '+
+        '<a href="https://github.com/ubertv/patching" target="_blank" rel="noopener">take a copy from the repo</a>.'
+      : 'score.html reads that file at boot. Nothing else to set up.')+
+      (canPick() ? ' The dialogue lets you save it straight into place.' : '')+'</div>'+
     '<div class="row">'+
       '<button id="dlall" class="primary">'+esc(saveLabel("scores.js"))+'</button>'+
       '<button id="cpall" class="xlink">Copy the text instead</button>'+
@@ -1180,9 +1187,9 @@ document.getElementById("ball").addEventListener("click", function(){
     '</div></details>'
   );
   document.getElementById("dlall").onclick = function(){
-    saveFile("scores.js", src, this, "scores/scores.js");
+    saveFile("scores.js", src, this, hosted() ? "a safe place" : "scores/scores.js");
   };
-  document.getElementById("cpall").onclick = function(){ copy(src, "Copied. Paste it into scores/scores.js"); };
+  document.getElementById("cpall").onclick = function(){ copy(src, hosted() ? "Copied. Paste it into a file and keep it." : "Copied. Paste it into scores/scores.js"); };
 });
 document.getElementById("btxt").addEventListener("click", function(){
   save();
@@ -1343,6 +1350,15 @@ function fallbackCopy(text, message){
    whole point when you save to the same place every time. */
 /* The button should say what will actually happen, and that depends on where
    the page was opened from. */
+/* Served from someone else's web host, as opposed to your own folder or a
+   localhost server. A visitor there cannot put a file next to index.html, so
+   telling them to "save it as patches/patches.js" is an instruction they can't
+   follow and it reads as though the app is broken. */
+function hosted(){
+  return /^https?:$/.test(location.protocol) &&
+    !/^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/.test(location.hostname);
+}
+
 function canPick(){ return !!(window.showSaveFilePicker && window.isSecureContext); }
 function saveLabel(name){ return canPick() ? "Save " + name + "\u2026" : "Download " + name; }
 

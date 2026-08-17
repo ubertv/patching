@@ -987,8 +987,15 @@ document.getElementById("bexport").addEventListener("click", function(){
       'until you close the tab and then it is gone, for the patch tool too, which reads the '+
       'same storage. Exporting is the only way to keep any of it. Serving the folder over '+
       '<span class="mono">http://localhost</span> avoids the problem entirely.</div>')+
-    '<div class="xdo">Save it as <span class="mono">lib/library.js</span></div>'+
-    '<div class="xwhere">Both pages read that file at boot. Nothing else to set up.'+(canPick() ? ' The dialogue lets you save it straight into place.' : '')+'</div>'+
+    '<div class="xdo">'+(hosted()
+      ? 'Keep this file somewhere you will find it again'
+      : 'Save it as <span class="mono">lib/library.js</span>')+'</div>'+
+    '<div class="xwhere">'+(hosted()
+      ? 'It is your only copy outside this browser. <b>File \u2192 Import\u2026</b> reads it back. '+
+        'For the version where the file sits in a folder and loads itself, '+
+        '<a href="https://github.com/ubertv/patching" target="_blank" rel="noopener">take a copy from the repo</a>.'
+      : 'Both pages read that file at boot. Nothing else to set up.')+
+      (canPick() ? ' The dialogue lets you save it straight into place.' : '')+'</div>'+
     '<div class="row">'+
       '<button id="dl" class="primary">'+esc(saveLabel("library.js"))+'</button>'+
       '<button id="cp" class="xlink">Copy the text instead</button>'+
@@ -1004,9 +1011,9 @@ document.getElementById("bexport").addEventListener("click", function(){
     '</div></details>'
   );
   document.getElementById("dl").onclick = function(){
-    saveFile("library.js", src, this, "lib/library.js");
+    saveFile("library.js", src, this, hosted() ? "a safe place" : "lib/library.js");
   };
-  document.getElementById("cp").onclick = function(){ copy(src, "Copied. Paste it into lib/library.js"); };
+  document.getElementById("cp").onclick = function(){ copy(src, hosted() ? "Copied. Paste it into a file and keep it." : "Copied. Paste it into lib/library.js"); };
 });
 
 /* -------------------------------------------------------------- importing --- */
@@ -1101,6 +1108,15 @@ function fallbackCopy(text, message){
    whole point when you save to the same place every time. */
 /* The button should say what will actually happen, and that depends on where
    the page was opened from. */
+/* Served from someone else's web host, as opposed to your own folder or a
+   localhost server. A visitor there cannot put a file next to index.html, so
+   telling them to "save it as patches/patches.js" is an instruction they can't
+   follow and it reads as though the app is broken. */
+function hosted(){
+  return /^https?:$/.test(location.protocol) &&
+    !/^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/.test(location.hostname);
+}
+
 function canPick(){ return !!(window.showSaveFilePicker && window.isSecureContext); }
 function saveLabel(name){ return canPick() ? "Save " + name + "\u2026" : "Download " + name; }
 

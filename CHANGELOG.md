@@ -20,6 +20,17 @@ Saving a file, made to feel like saving a file.
   `index.html` by double-clicking still gets the plain download, and the button
   says which one you are about to get.
 
+### Fixed
+
+- **Export told hosted visitors to do something impossible.** On a public site
+  the sheet said to save the file as `patches/patches.js` and that the app reads
+  it at boot. A visitor cannot write to someone else's server, so that was an
+  instruction they could not follow and it read like the app was broken. Served
+  from a host it now says to keep the file somewhere they will find it, points
+  at **File → Import…** for reading it back, and links to the repo for the
+  version where the file sits in a folder and loads itself. Off `file://` or
+  localhost nothing changes.
+
 ### Changed
 
 - **The three export sheets read the same and lead with the filename.** They had
