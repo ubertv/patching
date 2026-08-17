@@ -33,6 +33,13 @@ Saving a file, made to feel like saving a file.
   at that point it is not the patch you arranged any more. Same input, now
   1386 by 2294.
 
+- **Zooming past the pane width did nothing.** The canvas pane is a column flex
+  container, so the box holding the sheet stretched to the pane and stayed
+  there. Press `+` and the sheet grew downward while the width appeared to stop,
+  because there was nothing wider for the pane to scroll to. It sizes to the
+  diagram now, which also gives back the padding on the right that stretching
+  was eating.
+
 - **Fit width magnified small diagrams.** It scaled a four-module patch up to
   131% because there was room, and that zoom stuck for whatever you typed next.
   Fitting now only ever scales down.
