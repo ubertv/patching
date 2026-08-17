@@ -6,6 +6,31 @@ each of them, so a screenshot says which copy someone is running.
 `0.x` means the format may still move. See the note at the bottom for what 1.0
 is waiting on.
 
+## 0.1.2 — 17 August 2026
+
+Saving a file, made to feel like saving a file.
+
+### Added
+
+- **Export offers a real Save dialogue.** Patches, modules and scores all open a
+  file picker so you can navigate to `patches/`, `lib/` or `scores/` and write
+  the file where it belongs, rather than finding it in Downloads and moving it.
+  The browser reopens in the same folder next time. It needs Chrome or Edge on a
+  served page: `showSaveFilePicker` is not available on `file://`, so opening
+  `index.html` by double-clicking still gets the plain download, and the button
+  says which one you are about to get.
+
+### Changed
+
+- **The three export sheets read the same and lead with the filename.** They had
+  drifted into three registers for one act, and each opened with a paragraph of
+  reasoning before the button. Now: the destination first, the button, a quiet
+  link to copy the text instead, and the reasoning behind a fold. The
+  no-local-storage warning is a bar at the top rather than a bolded sentence
+  mid-paragraph, and saving confirms and repeats where the file goes.
+
+---
+
 ## 0.1.1 — 17 August 2026
 
 ### Added
@@ -24,22 +49,7 @@ is waiting on.
   and **Share → Patch guide as Markdown** writes a file. There is no import: the
   guide is generated from the patch, never read back.
 
-- **Export offers a real Save dialogue.** Patches, modules and scores all open a
-  file picker so you can navigate to `patches/`, `lib/` or `scores/` and write
-  the file where it belongs, rather than finding it in Downloads and moving it.
-  The browser reopens in the same folder next time. It needs Chrome or Edge on a
-  served page: `showSaveFilePicker` is not available on `file://`, so opening
-  `index.html` by double-clicking still gets the plain download, and the button
-  says which one you are about to get.
-
 ### Changed
-
-- **The three export sheets read the same and lead with the filename.** They had
-  drifted into three registers for one act, and each opened with a paragraph of
-  reasoning before the button. Now: the destination first, the button, a quiet
-  link to copy the text instead, and the reasoning behind a fold. The
-  no-local-storage warning is a bar at the top rather than a bolded sentence
-  mid-paragraph, and saving confirms and repeats where the file goes.
 
 - **One library file instead of three.** `lib/generics.js` and `lib/starter.js`
   are now `lib/library.js`: 32 generic placeholders and 18 real modules, 50 in
