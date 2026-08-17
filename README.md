@@ -166,7 +166,7 @@ an edited guide to disagree with the patch it came from.
 |---|---|
 | `patches/patches.js` | **the durable copy.** A plain `<script src>`, so it loads identically off a filesystem, off localhost and off a web host. Picked up automatically at boot. |
 | browser storage | **the working copy.** Automatic and instant, but one browser on one machine. |
-| Export / Import | **the bridge.** Export writes a `patches/patches.js` you drop into place. Import reads one back. |
+| Export / Import | **the bridge.** Export writes a `patches/patches.js`. On a served page it opens a Save dialogue so you can put it straight into `patches/`; off `file://` it downloads and you move it. Import reads one back. |
 
 Export is what makes a patch permanent. **File → Export all patches** writes the file; save it
 as `patches/patches.js` and there's nothing else to set up.

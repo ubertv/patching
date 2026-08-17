@@ -121,6 +121,22 @@ a{color:var(--accent)}
   box-shadow:0 18px 50px var(--shadow);
   max-width:900px; width:100%; max-height:88vh; overflow:auto; padding:16px 18px}
 .sheet h3{margin:0 0 10px; font-size:15px}
+
+/* Export sheets. The act is "put this file somewhere", so the filename and the
+   button come first and the reasoning waits until asked. */
+.xwarn{background:var(--err-bg); color:var(--err-ink); border:1px solid var(--bad);
+  border-radius:7px; padding:10px 12px; margin-bottom:14px; font-size:13px; line-height:1.5}
+.xdo{font-size:14px; margin-bottom:3px}
+.xdo .mono{font-weight:600}
+.xwhere{color:var(--ink3); font-size:12.5px; margin-bottom:14px}
+.xcount{color:var(--ink3); font-size:12px; margin-top:12px}
+.xlink{background:none; border:none; color:var(--accent); padding:6px 2px;
+  font-size:13px; cursor:pointer; text-decoration:underline}
+.xlink:hover{background:none; filter:brightness(1.15)}
+.sheet details{margin-top:16px; border-top:1px solid var(--line); padding-top:12px}
+.sheet summary{cursor:pointer; color:var(--ink3); font-size:12.5px; list-style:revert}
+.sheet details[open] summary{margin-bottom:8px}
+.sheet details div{color:var(--ink2); font-size:12.5px; line-height:1.6; max-width:62ch}
 .sheet textarea{width:100%; height:300px; font-family:var(--mono); font-size:11.5px;
   line-height:1.55; border:1px solid var(--line2); border-radius:5px; padding:8px 10px}
 .keys{display:grid; grid-template-columns:auto 1fr; gap:7px 14px; align-items:start;
@@ -1144,29 +1160,29 @@ document.getElementById("ball").addEventListener("click", function(){
   var src = exportSource(), n = allScores().length;
   openSheet(
     '<h3>Export all scores</h3>'+
-    '<div style="color:var(--ink2);margin-bottom:10px;max-width:64ch">'+
-      'Save it as <span class="mono">scores/scores.js</span>. score.html reads that file at boot, '+
-      'so there is nothing else to set up.<br><br>'+
-      (STORAGE_OK
-        ? 'Browser storage is one browser on one machine. The file survives clearing your browsing '+
-          'data, moves to another computer, and can go in a repo.'
-        : '<b style="color:var(--bad)">This browser is not storing anything.</b> Exporting is the '+
-          'only way to keep any of it.')+
-      '<br><br>Dropping it back in doesn\'t duplicate anything: each score carries its id.'+
-    '</div>'+
+    (STORAGE_OK ? '' :
+      '<div class="xwarn"><b>This browser is not storing your scores.</b> Firefox refuses '+
+      'local storage on <span class="mono">file://</span> pages, so everything here works '+
+      'until you close the tab and then it is gone. Exporting is the only way to keep any '+
+      'of it. Serving the folder over <span class="mono">http://localhost</span> avoids the '+
+      'problem entirely.</div>')+
+    '<div class="xdo">Save it as <span class="mono">scores/scores.js</span></div>'+
+    '<div class="xwhere">score.html reads that file at boot. Nothing else to set up.'+(canPick() ? ' The dialogue lets you save it straight into place.' : '')+'</div>'+
     '<div class="row">'+
-      '<button id="dlall" class="primary">Download scores.js</button>'+
-      '<button id="cpall">Copy</button>'+
+      '<button id="dlall" class="primary">'+esc(saveLabel("scores.js"))+'</button>'+
+      '<button id="cpall" class="xlink">Copy the text instead</button>'+
     '</div>'+
-    '<div style="color:var(--ink3);margin:10px 0 4px">'+n+' score'+(n===1?'':'s')+'</div>'+
-    '<textarea readonly id="allbox"></textarea>'
+    '<div class="xcount">'+n+' score'+(n===1?'':'s')+'</div>'+
+    '<details><summary>Why export, and what happens when I import it back</summary><div>'+
+      'Browser storage is one browser on one machine, and clearing your browsing data takes '+
+      'it with it. The file survives that, moves to another computer, and can go in a repo.'+
+      '<br><br>Dropping it back in doesn\'t duplicate anything: each score carries its id.'+
+    '</div></details>'
   );
-  document.getElementById("allbox").value = src;
-  document.getElementById("dlall").onclick = function(){ download("scores.js", src); };
-  document.getElementById("cpall").onclick = function(){
-    var ta = document.getElementById("allbox"); ta.select();
-    try { document.execCommand("copy"); } catch(e){}
+  document.getElementById("dlall").onclick = function(){
+    saveFile("scores.js", src, this, "scores/scores.js");
   };
+  document.getElementById("cpall").onclick = function(){ copy(src, "Copied. Paste it into scores/scores.js"); };
 });
 document.getElementById("btxt").addEventListener("click", function(){
   save();
@@ -1287,6 +1303,73 @@ function doImport(list, mode){
   });
   if (last) showScore(last);
   save(); closeSheet(); paintPatches(); paintList(); render();
+}
+
+/* Same three helpers as the patch page, because the same act should give the
+   same feedback wherever you do it. */
+function flash(text, bad){
+  var el = document.getElementById("stat");
+  el.innerHTML = '<span style="color:'+(bad?"var(--bad)":"var(--ok)")+'">'+esc(text)+'</span>';
+  setTimeout(paintList, 2200);
+}
+function done(btn, msg){
+  var was = btn.textContent;
+  btn.textContent = "✓ " + msg;
+  btn.disabled = true;
+  setTimeout(function(){ btn.textContent = was; btn.disabled = false; }, 3200);
+}
+function copy(text, message){
+  if (navigator.clipboard && window.isSecureContext){
+    navigator.clipboard.writeText(text).then(function(){ flash(message); },
+      function(){ fallbackCopy(text, message); });
+  } else fallbackCopy(text, message);
+}
+function fallbackCopy(text, message){
+  var ta = document.createElement("textarea");
+  ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); flash(message); }
+  catch(e){ flash("Copy blocked. Use Download instead.", true); }
+  document.body.removeChild(ta);
+}
+
+/* A real Save dialogue when the browser will give us one, so you can navigate
+   to patches/ and put the file where it belongs instead of fishing it out of
+   Downloads afterwards. Chrome and Edge only, and it needs a secure context,
+   which file:// is not. So opening index.html by double-clicking gets the old
+   anchor download, which is the case this app most wants to keep working.
+
+   The id makes the browser reopen in the same folder next time, which is the
+   whole point when you save to the same place every time. */
+/* The button should say what will actually happen, and that depends on where
+   the page was opened from. */
+function canPick(){ return !!(window.showSaveFilePicker && window.isSecureContext); }
+function saveLabel(name){ return canPick() ? "Save " + name + "\u2026" : "Download " + name; }
+
+function saveFile(name, text, btn, where){
+  /* done() adds the tick. */
+  var placed = "Saved as " + name;
+  var fell   = "Downloaded. Save it as " + where;
+  if (window.showSaveFilePicker && window.isSecureContext){
+    window.showSaveFilePicker({
+      suggestedName: name,
+      id: "patching-export",
+      startIn: "documents",
+      types: [{ description:"JavaScript", accept:{ "text/javascript":[".js"] } }]
+    }).then(function(h){
+      return h.createWritable().then(function(w){
+        return w.write(text).then(function(){ return w.close(); });
+      }).then(function(){ if (btn) done(btn, placed); });
+    }).catch(function(e){
+      /* Cancelling is not a failure and should say nothing at all. */
+      if (e && e.name === "AbortError") return;
+      download(name, text);
+      if (btn) done(btn, fell);
+    });
+    return;
+  }
+  download(name, text);
+  if (btn) done(btn, fell);
 }
 
 function download(name, text){

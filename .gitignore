@@ -1,16 +1,18 @@
 .DS_Store
 
-# Your own patches, likewise. Delete this line to keep them in the repo, which
-# is a reasonable thing to want: it's version history for your patches.
+# Your own work. Each of these is a file the app writes and you place, so it's
+# yours rather than the project's. Delete a line to keep that one in the repo,
+# which is a reasonable thing to want: it's version history for your patches.
 patches/patches.js
 scores/scores.js
-SETUP.md
 
 # Notes to self. Not for publication.
 ROADMAP.md
+SETUP.md
 
-# The library workbench. A local authoring tool, not part of the app: it writes
-# into lib/ and the results are what ships, not the tool itself.
+# The library workbench. A local authoring tool, not part of the app: it holds
+# the whole library including gear that isn't in the public one, and exports
+# what ships. The export is what belongs in the repo, not the tool or its data.
 workbench/
 
 # Superseded by examples/examples.js, which is the single source of truth.
