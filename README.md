@@ -135,6 +135,29 @@ selected module moves the whole selection. Esc deselects.
 Positions belong to the patch and save as you go. There is no undo, so **Auto layout** is the way
 back.
 
+### The guide
+
+**Guide**, next to **Diagram** above the canvas, is the same patch written as instructions for
+building it. Numbered steps in signal order, each naming the module and the jack in the words
+printed on the panel rather than the ids you typed:
+
+```
+1. Sequencer CV → VCO V/OCT
+2. Sequencer GATE → Envelope GATE
+3. VCO SAW → VCF IN
+```
+
+Knob settings are gathered into a **Set up** block at the head of the section where that module
+is first patched, so you turn the knobs before you start plugging. Sections become headings,
+and a cable's `"note"` sits under its step.
+
+The diagram answers what connects to what. The guide answers how to build it again.
+
+**Copy** puts it on the clipboard as Markdown. **Print** takes the guide alone, without the
+diagram. **Share → Patch guide as Markdown** writes a file.
+
+It's generated from the patch and never read back, so there's nothing to import and no way for
+an edited guide to disagree with the patch it came from.
 
 ### Where your patches are kept
 
@@ -206,12 +229,14 @@ converts their `->` to an explicit `[audio]` so nothing is lost in translation.
 
 Because it knows the jacks on each module, it can tell you things a drawing program can't:
 
-- **Which normals you're breaking.** Patch Maths' output `1` and it tells you you've just
-  removed that channel from the SUM and OR buses. Patch Rings' `STRUM` and it tells you the
-  module will stop strumming itself from `V/OCT` and `IN`.
 - **Direction errors.** An output can't be a destination.
 - **Two cables into one input.** You physically can't. Patch a mult, or use a stackable.
 - **Unknown modules and jacks**, with a suggestion when it's a typo.
+
+It does **not** warn you about normals you're breaking. Modules carry `normalled` prose and
+`modules.html` shows it, but the patch page stays quiet. That check is only worth trusting
+across a library that covers your rack, and nine real modules isn't one. Firing it on the
+handful of modules that happen to be in `lib/` would imply coverage that isn't there.
 
 ---
 
@@ -249,11 +274,10 @@ window.MODULE_LIBRARIES.push({
 
 - `dir` is `in`, `out` or `both`
 - `sig` is `audio`, `pitch`, `cv`, `gate`, `clock` or `multi`
-- `normalled` is prose describing what patching this jack disconnects. Optional. It's the thing
-  a diagram can tell you that a photo can't.
-- `x` / `y` are fractions of the panel, 0 to 1, so they survive any image resolution. Optional
-  and currently unused. The flow view doesn't read them and there's no interface for setting
-  them. They're kept in the data for a future panel view.
+- `normalled` is prose describing what patching this jack disconnects. Optional. Collected and
+  shown on the module page, but the patch page doesn't read it. Keep writing it: it's the one
+  thing a manual records that a panel photograph can't show, and it's what a normalling check
+  would need if the library ever grows enough to justify one.
 - `note` is anything worth knowing about the module itself: power draw, that it's discontinued.
 - `tags` decides the colour of the box, and the first tag decides which group the module files
   under, so put the primary function first.
@@ -262,11 +286,11 @@ window.MODULE_LIBRARIES.push({
 
 **Modules → Help → Module data** carries the same reference inside the app, next to a real entry.
 
-Ships with two libraries:
+One library, `lib/library.js`: 32 placeholders (VCO, VCF, envelope, mixer, delay and so on)
+for sketching without committing to specific gear, and 18 real modules.
 
-- `lib/generics.js` has 32 placeholders (VCO, VCF, envelope, mixer, delay and so on) for
-  sketching without committing to specific gear.
-- `lib/starter.js` has 18 common modules.
+Add your own to it, or drop another file in `lib/` and add a script tag. Any file that pushes
+onto `window.MODULE_LIBRARIES` is picked up.
 
 `modules.html` manages all of it, and has similar menu bar as the patch page: **File** on the
 left for new, import and export, **Help** on the right.
@@ -287,11 +311,11 @@ defaults for everything you haven't touched.
 |---|---|
 | `lib/*.js` | **the durable copy.** Plain `<script src>` files, so they load identically off a filesystem, off localhost and off a web host. Anything in `lib/library.js` is picked up automatically at boot. |
 | browser storage | **the working copy.** Automatic and instant, but one browser on one machine. |
-| Export / Import | **the bridge.** **File → Export library** writes a `lib/library.js` you drop next to the others. **File → Import…** reads one back. |
+| Export / Import | **the bridge.** **File → Export library** writes a `lib/library.js` you drop into place. **File → Import…** reads one back and merges by id. |
 
-Browser storage holds one thing: every module that differs from the files in `lib/`. A module
-you made is an entry with nothing underneath it, a module you corrected is an entry shadowing
-the file, and `off: true` keeps one out of the patch editor's autocomplete. **Revert to file**
+Browser storage holds one thing: every module that differs from `lib/library.js`. A module you
+made is an entry with nothing underneath it, a module you corrected is an entry shadowing the
+file, and `off: true` keeps one out of the patch editor's autocomplete. **Revert to file**
 deletes the entry.
 
 Export writes all of it, so the file carries your own modules, your corrections and your on/off
@@ -306,16 +330,14 @@ index.html          the patch tool
 modules.html        the module library editor
 CHANGELOG.md        what changed, and what 1.0 is waiting on
 score.html          scores. Experimental, and says so in its own header
-lib/generics.js     placeholder modules
-lib/starter.js      widely-owned real modules
-lib/library.js      your modules, if you export one (gitignored by default)
+lib/library.js      the module library: 32 placeholders and 18 real modules
 patches/patches.js  your patches, if you export one (gitignored by default)
 scores/scores.js    your scores, if you export one (gitignored by default)
 examples/           example patches, offered from the File menu
 ```
 
-`lib/library.js`, `patches/patches.js` and `scores/scores.js` are all optional and all loaded
-with an `onerror` guard, so every page starts perfectly well without any of them.
+`patches/patches.js` and `scores/scores.js` are optional and loaded with an `onerror` guard,
+so every page starts perfectly well without either.
 
 All three pages carry the menu bar: **File** on the left, **Help** on the right, and the same
 three-tier storage underneath. One arrangement, three kinds of thing.

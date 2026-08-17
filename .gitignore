@@ -1,9 +1,5 @@
 .DS_Store
 
-# Your own module library is personal by default. Delete this line if you want
-# to commit and share it.
-lib/library.js
-
 # Your own patches, likewise. Delete this line to keep them in the repo, which
 # is a reasonable thing to want: it's version history for your patches.
 patches/patches.js
@@ -12,6 +8,10 @@ SETUP.md
 
 # Notes to self. Not for publication.
 ROADMAP.md
+
+# The library workbench. A local authoring tool, not part of the app: it writes
+# into lib/ and the results are what ships, not the tool itself.
+workbench/
 
 # Superseded by examples/examples.js, which is the single source of truth.
 examples/*.txt

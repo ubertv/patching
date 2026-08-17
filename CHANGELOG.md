@@ -6,6 +6,47 @@ each of them, so a screenshot says which copy someone is running.
 `0.x` means the format may still move. See the note at the bottom for what 1.0
 is waiting on.
 
+## 0.1.1 — 17 August 2026
+
+### Added
+
+- **A patch guide, next to the diagram.** The **Guide** tab turns the patch into
+  instructions for building it: numbered steps in signal order, each one naming
+  the module and the jack in the words printed on the panel rather than the ids
+  you typed. Knob settings are gathered into a setup block at the head of the
+  section where that module is first patched. Sections become headings, and a
+  cable's `"note"` sits under its step.
+
+  The diagram answers what connects to what. The guide answers how to build it
+  again, which is the thing you actually carry to the rack.
+
+  **Copy** puts it on the clipboard as Markdown, **Print** takes the guide alone,
+  and **Share → Patch guide as Markdown** writes a file. There is no import: the
+  guide is generated from the patch, never read back.
+
+### Changed
+
+- **One library file instead of three.** `lib/generics.js` and `lib/starter.js`
+  are now `lib/library.js`: 32 generic placeholders and 18 real modules, 50 in
+  all. Nothing branched on which file a module came from, so the split bought
+  nothing and cost a concept. Any other file dropped into `lib/` is still picked
+  up.
+
+### Removed
+
+- **Jack `x` and `y` coordinates.** 105 pairs, and nothing read them. They were
+  kept for a panel view that may never happen.
+
+### Fixed
+
+- **Import replaced your modules instead of adding to them.** `modules.html`
+  cleared the override store before reading the incoming file, so importing a
+  library of two new modules deleted every module you'd made and every
+  correction you'd saved. It merges by id now and says how many were added and
+  how many updated.
+
+---
+
 ## 0.1.0 — 16 August 2026
 
 First release.
@@ -16,9 +57,10 @@ text and draws the signal flow. `modules.html` manages the module library.
 
 - The patch language: cables, chains, typed arrows, named instances, sections,
   parameter blocks, and PatchBook markup mixed in freely.
-- Checks the parser can make because it knows the jacks on each module: normals
-  you're breaking, direction errors, two cables into one input, unknown modules
-  and jacks with a suggestion when it's a typo.
+- Checks the parser can make because it knows the jacks on each module:
+  direction errors, two cables into one input, unknown modules and jacks with a
+  suggestion when it's a typo. Normalling is recorded in the library and shown on
+  the module page, but the patch page doesn't warn about it.
 - A library of 32 generic modules and 18 real ones, each traceable to a manual
   or a panel photograph.
 - Drag to arrange, shift-click and rubber-band to select, group move, and auto

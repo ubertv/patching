@@ -238,9 +238,7 @@ td select{padding:2px 4px}
 <div id="veil"><div class="sheet" id="sheet"></div></div>
 
 <!-- Plain script tags. No build step, nothing to serve. -->
-<script src="lib/generics.js"></script>
-<script src="lib/starter.js"></script>
-<script src="lib/library.js" onerror="void 0"></script>
+<script src="lib/library.js"></script>
 <script>
 (function(){
 "use strict";
@@ -259,7 +257,7 @@ td select{padding:2px 4px}
 
 var LIBS = window.MODULE_LIBRARIES || [];
 var REPO = "https://github.com/ubertv/patching";   /* also in index.html */
-var VERSION = "0.1.0";                             /* bump all three together */
+var VERSION = "0.1.1";                             /* bump all three together */
 /* ------------------------------------------------------------- the store ---
    ONE map, keyed by module id, holding everything that differs from the files
    in lib/. That is the whole model, and it is the same one patches and scores
@@ -421,7 +419,7 @@ var SIGDASH = { audio:"solid", pitch:"dashed", cv:"dotted", gate:"dashed",
   clock:"dotted", multi:"double" };
 /* Modules are grouped by WHAT THEY DO, not by which file they came from.
    Provenance is an implementation detail — when you're looking for a filter you
-   don't care whether it arrived in generics.js or starter.js — so it's demoted
+   don't care which library file it arrived in — so it's demoted
    to a badge. Classification is by tag, which every module carries. */
 var CATS = [
   ["Sound sources",       ["oscillator","drum","noise","granular","sampler","voice"]],
@@ -531,6 +529,14 @@ function uniqueId(jacks, base){
 
 /* -------------------------------------------------------------- rendering --- */
 
+var flash = "";          /* transient note in the status bar, cleared on the next action */
+function setFlash(t){
+  flash = t;
+  drawStat();
+  clearTimeout(setFlash.t);
+  setFlash.t = setTimeout(function(){ flash = ""; drawStat(); }, 6000);
+}
+
 function drawStat(){
   var all = everything();
   var changes = Object.keys(over).length;
@@ -545,6 +551,7 @@ function drawStat(){
          (dirty ? ' <span style="color:var(--warn)">not exported yet</span>'
                 : ' <span style="color:var(--ink3)">saved in this browser</span>');
   }
+  if (flash) s += ' · <span style="color:var(--ok)">'+flash+'</span>';
   document.getElementById("stat").innerHTML = s;
 }
 
@@ -1021,8 +1028,15 @@ document.getElementById("file").addEventListener("change", function(){
       } else if (mm){
         incoming = JSON.parse(mm[1]);
       } else throw new Error("no modules found");
-      over = {};
-      incoming.forEach(function(m){ if (m && m.id) over[m.id] = m; });
+      /* Merge, don't replace. This used to clear `over` first, so importing a
+         file of two new modules deleted every module you'd made and every
+         correction you'd saved. Nobody reads Import as "discard my work". */
+      var added = 0, updated = 0;
+      incoming.forEach(function(m){
+        if (!m || !m.id) return;
+        if (Object.prototype.hasOwnProperty.call(over, m.id)) updated++; else added++;
+        over[m.id] = m;
+      });
       /* Older exports carried the off list separately. */
       if (pm){
         var p = JSON.parse(pm[1]);
@@ -1031,9 +1045,10 @@ document.getElementById("file").addEventListener("change", function(){
           over[id].off = true;
         });
       }
-      /* No toast: redraw repopulates the list and the counter in the header
-         changes on the same frame, which is louder than a message would be. */
       sel = firstModule(); save(); closeSheet(); redraw();
+      /* Worth saying out loud, because merging is quieter than replacing was:
+         without a count you can't tell whether the file did anything. */
+      setFlash("imported " + added + " new, updated " + updated);
     } catch(err){ alert("That didn't parse as a library file: " + err.message); }
   };
   r.readAsText(f);
@@ -1149,8 +1164,8 @@ document.getElementById("bhelp").addEventListener("click", function(){
       '<div class="mono">label</div><div>Required. The silkscreen. Drawn on the diagram.</div>'+
       '<div class="mono">dir</div><div>Required. <span class="mono">in</span>, <span class="mono">out</span> or <span class="mono">both</span>. An output cannot be a cable\'s destination, and the patch tool reports it.</div>'+
       '<div class="mono">sig</div><div>Required. <span class="mono">audio</span>, <span class="mono">pitch</span>, <span class="mono">cv</span>, <span class="mono">gate</span>, <span class="mono">clock</span> or <span class="mono">multi</span>. The source jack decides what a cable carries. What the destination expects does not change it.</div>'+
-      '<div class="mono">normalled</div><div>What patching this jack disconnects, in prose. 67 of the 226 jacks in <span class="mono">starter.js</span> carry it. A photograph cannot show this.</div>'+
-      '<div class="mono">x / y</div><div>Panel fractions, 0 to 1, so they survive any image resolution. Stored, not read.</div>'+
+      '<div class="mono">normalled</div><div>What patching this jack disconnects, in prose. 67 of the jacks in <span class="mono">lib/library.js</span> carry it. A photograph cannot show this.</div>'+
+
     '</div>'+
     '<div class="row"><button id="helpclose" class="primary">Close</button></div>'
   );
@@ -1167,8 +1182,8 @@ document.getElementById("bhelp").addEventListener("click", function(){
       firmware: "https://www.instruomodular.com/firmware/"
     },
     jacks: [
-      { id: "in", label: "IN", dir: "in", sig: "audio", x: 0.072, y: 0.163 },
-      { id: "onset", label: "ONSET", dir: "in", sig: "gate", x: 0.072, y: 0.264 }
+      { id: "in", label: "IN", dir: "in", sig: "audio" },
+      { id: "onset", label: "ONSET", dir: "in", sig: "gate" }
     ]
   }, null, 2);
   document.getElementById("helpclose").onclick = closeSheet;
@@ -1200,7 +1215,7 @@ document.getElementById("babout").addEventListener("click", function(){
 
 if (!LIBS.length && !Object.keys(over).length){
   document.body.innerHTML = '<div style="padding:30px;color:#e0605e">No module libraries loaded. '+
-    'Check that <span style="font-family:monospace">lib/generics.js</span> is present next to this file.</div>';
+    'Check that <span style="font-family:monospace">lib/library.js</span> is present next to this file.</div>';
 } else {
   /* An older library file can still carry a separate off list. It only seeds a
      browser that has nothing of its own, including one that cannot have

@@ -255,6 +255,51 @@ h2 .spacer{flex:1}
 #zoomlvl{color:var(--ink2); font-size:12px; min-width:44px; text-align:center;
   font-variant-numeric:tabular-nums}
 #canvaswrap{padding:22px; flex:1}
+#zoomctl,#guidectl{display:flex; gap:6px; align-items:center}
+.seg{display:flex; gap:2px; background:var(--surface2); padding:2px; border-radius:6px;
+  border:1px solid var(--line)}
+.seg button{padding:2px 10px; font-size:12px; border-color:transparent; background:none;
+  box-shadow:none; color:var(--ink2); border-radius:4px}
+.seg button.on{background:var(--surface); color:var(--ink); font-weight:600;
+  box-shadow:0 1px 2px var(--shadow-soft)}
+
+/* The guide is a document, not an interface, so it gets document measure and
+   document spacing rather than the app's density. */
+#guidewrap{display:none; flex:1; overflow:auto; padding:26px 30px}
+#guidedoc{max-width:62ch}
+#guidedoc h1{font-size:19px; margin:0 0 3px; font-weight:650}
+#guidedoc .gmeta{color:var(--ink3); font-size:12px; margin-bottom:14px}
+#guidedoc .gnotes{color:var(--ink2); margin:0 0 18px; line-height:1.6;
+  border-left:2px solid var(--line2); padding-left:12px}
+#guidedoc .gempty{color:var(--ink3)}
+#guidedoc h2{font-size:11px; text-transform:uppercase; letter-spacing:.1em;
+  color:var(--ink3); font-weight:650; margin:26px 0 6px;
+  border-bottom:1px solid var(--line); padding-bottom:5px}
+#guidedoc h3{font-size:12px; font-weight:600; color:var(--ink2); margin:14px 0 2px}
+#guidedoc table{width:100%; border-collapse:collapse}
+#guidedoc td{padding:3px 8px 3px 0; vertical-align:baseline; border:none}
+.gsteps .gn{color:var(--ink3); font-size:11.5px; text-align:right; width:2.4em;
+  font-variant-numeric:tabular-nums; padding-right:10px}
+.gsteps .gmod,.gset .gmod{white-space:nowrap}
+.gsteps .gj{font-family:var(--mono); font-size:12px; font-weight:600; white-space:nowrap}
+.gsteps .garr{color:var(--ink3); padding:0 4px}
+.gsteps .grow-note td{color:var(--ink3); font-size:11.5px; padding-top:0; padding-bottom:6px}
+.gset .gmod{color:var(--ink2)}
+.gparam{display:inline-block; margin-right:14px; font-size:12.5px}
+.gparam b{font-family:var(--mono); font-size:11.5px; font-weight:600; color:var(--ink2)}
+
+/* Cmd+P gives the pane you're looking at and nothing else. Wanted for the
+   diagram anyway; the guide is the thing you actually carry to the rack. */
+@media print{
+  html,body{height:auto; overflow:visible; background:#fff}
+  #top,#left,#hsplit,#zoombar,#veil{display:none !important}
+  #cols{display:block}
+  #right{display:block !important; width:auto; border:none}
+  #guidewrap,#canvaswrap{overflow:visible; padding:0}
+  #guidedoc{max-width:none}
+  #guidedoc h2{break-after:avoid}
+  .gsteps tr,.gset tr{break-inside:avoid}
+}
 svg#diagram{
   background:var(--sheet); display:block; border:1px solid var(--line2);
   box-shadow:0 1px 2px var(--shadow-soft), 0 6px 18px var(--shadow-soft);
@@ -338,6 +383,7 @@ svg#diagram #band{ fill:var(--accent); fill-opacity:.08;
       <button id="bpng">Diagram as PNG<small>For forums and social, which reject SVG</small></button>
       <button id="bjson">This patch as JSON<small>Cables, layout and notes</small></button>
       <button id="bpb">PatchBook markup<small>For other tools</small></button>
+      <button id="bguide">Patch guide as Markdown<small>Instructions to rebuild it. One way</small></button>
     </div>
   </div>
   <button id="bsvg" class="primary">Export SVG</button>
@@ -376,18 +422,32 @@ vca:out -> delay:in &quot;a note on the cable&quot;"></textarea>
          changes the patch. Auto layout and the section filter belong with the
          zoom controls for that reason, not in a menu about the document. -->
     <div id="zoombar">
-      <button id="zout" title="Zoom out">&minus;</button>
-      <span id="zoomlvl">100%</span>
-      <button id="zin" title="Zoom in">+</button>
-      <button id="zfit">Fit width</button>
-      <button id="z100">100%</button>
+      <!-- Two ways of reading the same patch. The diagram answers "what connects
+           to what"; the guide answers "how do I build this again". -->
+      <div class="seg">
+        <button id="vdiagram">Diagram</button>
+        <button id="vguide">Guide</button>
+      </div>
       <div class="vrule"></div>
-      <button id="btidy" title="Arrange the boxes by signal flow">Auto layout</button>
-      <select id="vfilter" title="Fade everything outside one section" style="display:none"></select>
+      <div id="zoomctl">
+        <button id="zout" title="Zoom out">&minus;</button>
+        <span id="zoomlvl">100%</span>
+        <button id="zin" title="Zoom in">+</button>
+        <button id="zfit">Fit width</button>
+        <button id="z100">100%</button>
+        <div class="vrule"></div>
+        <button id="btidy" title="Arrange the boxes by signal flow">Auto layout</button>
+        <select id="vfilter" title="Fade everything outside one section" style="display:none"></select>
+      </div>
+      <div id="guidectl" style="display:none">
+        <button id="gcopy">Copy</button>
+        <button id="gprint" title="Print the guide alone">Print</button>
+      </div>
       <div style="flex:1"></div>
       <button class="panebtn" id="focusc" title="Expand the diagram (Esc to restore)"></button>
     </div>
     <div id="canvaswrap"><svg id="diagram"></svg></div>
+    <div id="guidewrap"></div>
   </div>
 </div>
 
@@ -396,9 +456,7 @@ vca:out -> delay:in &quot;a note on the cable&quot;"></textarea>
 <input type="file" id="file" accept=".json,.js,.txt" style="display:none">
 
 <!-- Plain script tags. No build step, nothing to serve. -->
-<script src="lib/generics.js"></script>
-<script src="lib/starter.js"></script>
-<script src="lib/library.js" onerror="void 0"></script>
+<script src="lib/library.js"></script>
 <script src="examples/examples.js" onerror="window.PATCH_EXAMPLES=null"></script>
 <script src="patches/patches.js" onerror="void 0"></script>
 <script>
@@ -422,7 +480,7 @@ vca:out -> delay:in &quot;a note on the cable&quot;"></textarea>
 var REPO = "https://github.com/ubertv/patching";
 /* Bump in all three pages together. Shown in About, so a screenshot says which
    copy someone is running. CHANGELOG.md is what the number means. */
-var VERSION = "0.1.0";
+var VERSION = "0.1.1";
 
 /* ---------------------------------------------------------------- libraries --- */
 /*
@@ -1729,14 +1787,12 @@ function render(){
       var y = n.y + HEADH + PADV + i*ROWH + ROWH/2;
       var j = jack(n.mod, jid);
       var s = SIG[portSig[n.key + "\u0000" + jid] || j.sig] || SIG.multi;
-      /* A hollow port means patching here displaces an internal connection.
-         Filled means it doesn't. That distinction is the reason the normalled
-         prose was worth collecting in the first place. */
+      /* Inputs and outputs draw identically. Ports used to go hollow to mark a
+         normal, which is why the asymmetry with the output side below is gone. */
       g.appendChild(el("circle", { cx:n.x, cy:y, r:3.6,
-        fill: j.normalled ? TH.sheet : s.c, stroke: j.normalled ? s.c : TH.sheet,
-        "stroke-width": j.normalled ? 1.8 : 1 }));
+        fill:s.c, stroke:TH.sheet, "stroke-width":1 }));
       g.appendChild(el("text", { x:n.x+9, y:y+3.4, "font-size":10.5, fill:TH.ink },
-        j.label + (j.normalled ? " *" : "")));
+        j.label));
     });
     n.outs.forEach(function(jid, i){
       var y = n.y + HEADH + PADV + i*ROWH + ROWH/2;
@@ -1769,6 +1825,7 @@ function render(){
   applyZoom();   /* render() resets width/height, so restore the zoom */
   report();
   updateStat();
+  renderGuide();  /* no-op unless the guide is the visible pane */
 }
 
 /* SVG text does not wrap. Break the notes into lines that fit the diagram width,
@@ -1821,11 +1878,6 @@ function drawLegend(svg, v){
     svg.appendChild(el("path", { d:"M "+x+" "+y+" L "+(x+34)+" "+y, stroke:TH.knock, "stroke-width":1.8, fill:"none" }));
     svg.appendChild(el("text", { x:x+40, y:y+3.5, "font-size":10, fill:TH.ink2 }, "stereo pair"));
     x += 132;
-  }
-  if (v.nodes.some(function(n){
-        return n.ins.some(function(j){ var k=jack(n.mod,j); return k && k.normalled; }); })){
-    svg.appendChild(el("circle", { cx:x+8, cy:y, r:3.6, fill:TH.sheet, stroke:TH.gen, "stroke-width":1.8 }));
-    svg.appendChild(el("text", { x:x+18, y:y+3.5, "font-size":10, fill:TH.ink2 }, "* breaks a normal"));
   }
   var baseY = v.h - 14 - noteH;
   svg.appendChild(el("text", { x:20, y:baseY, "font-size":10, fill:TH.faint },
@@ -2002,8 +2054,6 @@ function report(){
        cable's type and that's the end of it. */
   });
 
-  /* Normalling that this patch is actively breaking is the single most useful
-     thing this tool can tell you, so it goes last where it'll be read. */
   /* You cannot physically plug two cables into one input. PatchBook's data model
      enforces this by overwriting, silently — better to say so. If you meant to
      feed two things there you want a mult, or a stackable, and the diagram
@@ -2024,16 +2074,12 @@ function report(){
       ". Only one cable fits. Patch a mult in, or use a stackable." });
   });
 
-  var seen = {};
-  parsed.cables.forEach(function(c){
-    var b = jack(c.to.mod, c.to.jack);
-    var k = c.to.key + ":" + c.to.jack;
-    if (b.normalled && !seen[k]){
-      seen[k] = 1;
-      out.push({ lvl:"ok", ln:c.line, html:"Patching <b>"+esc(b.label)+"</b> on "+esc(c.to.mod)+
-        " breaks a normal: "+esc(b.normalled) });
-    }
-  });
+  /* NO NORMALLING NOTICE. The `normalled` prose is still collected and still
+     shown in modules.html, but the patch page says nothing about it. Telling you
+     which normal you're breaking is only worth trusting across a library that
+     covers your rack, and 18 real modules isn't that. A notice that fires on the
+     few modules we happen to hold reads as coverage we don't have. Bring it back
+     when the library does. */
 
   /* One summary line each, not one per cable — this is the difference between a
      useful nudge and a wall you learn to ignore. */
@@ -2534,6 +2580,10 @@ function doImport(list, mode){
   if (skipped) bits.push(skipped + " skipped");
   flash(bits.join(", ") + ".");
 }
+document.getElementById("bguide").addEventListener("click", function(){
+  download((patch.name || "patch").replace(/[^\w\-]+/g, "-").toLowerCase() + "-guide.md",
+           guideMarkdown());
+});
 document.getElementById("bpb").addEventListener("click", function(){
   var pb = toPatchBook();
   var multi = (view.allCables||[]).filter(function(c){ return (cableSig(c)||"multi") === "multi"; }).length;
@@ -2728,6 +2778,147 @@ document.getElementById("bpng").addEventListener("click", exportPNG);
    explicit [audio] tag rather than assuming our `->` means the same thing.
 */
 var PB_ARROW = { audio:"->", cv:">>", pitch:"p>", gate:"g>", clock:"c>", multi:">>" };
+
+/* ------------------------------------------------------------------ guide --- */
+
+/* Patch source is written to be typed. A guide is read with your hands full, at
+   the rack, rebuilding something you made a month ago. The gap between them is
+   almost entirely names: `vcf#lead:in` is a handle, "Ikarie (lead) · L IN" is
+   what's printed on the panel. So this expands, it does not prosify. "Take a
+   patch cable and connect the SAW output of the oscillator to the input of the
+   filter" is longer, slower to scan and no clearer than two names and an arrow.
+
+   Order is the source's own. Sections appear in the order they first appear, and
+   cables inside one stay exactly as written, because chain syntax already reads
+   in signal order and reshuffling it would lose the author's intent for no gain.
+   The only thing that moves is parameter blocks, which are hoisted to the top of
+   their section: knobs before cables, or you patch into a closed VCA, hear
+   nothing, and start pulling the patch apart looking for the fault.
+
+   It is one-way. A guide cannot be parsed back into a patch, and shouldn't try:
+   JSON and PatchBook are the round trips. */
+
+function guideModName(mod, inst){
+  var m = byId(mod);
+  return (m ? m.name : mod) + (inst ? " (" + inst + ")" : "");
+}
+function guideJackName(mod, jid){
+  var j = jack(mod, jid);
+  return j ? j.label : jid;
+}
+
+function buildGuide(){
+  var groups = [], byName = {};
+  function group(name){
+    var k = name || "";
+    if (!byName[k]){ byName[k] = { name:k, setup:[], steps:[] }; groups.push(byName[k]); }
+    return byName[k];
+  }
+  parsed.cables.forEach(function(c){ group(c.voice).steps.push(c); });
+
+  /* A parameter block belongs with the section where its module is first
+     patched. One for a module that never appears in a cable has nowhere better
+     to go than the front. */
+  var firstIn = {};
+  parsed.cables.forEach(function(c){
+    [c.from.key, c.to.key].forEach(function(k){
+      if (firstIn[k] === undefined) firstIn[k] = c.voice || "";
+    });
+  });
+  Object.keys(parsed.params).forEach(function(k){
+    if (!parsed.params[k] || !parsed.params[k].length) return;
+    var g = byName[firstIn[k]] || groups[0] || group("");
+    var base = k.replace(/#[a-z0-9\-]+$/i, "");
+    var inst = k.indexOf("#") >= 0 ? k.slice(k.indexOf("#") + 1) : null;
+    g.setup.push({ name: guideModName(base, inst), params: parsed.params[k] });
+  });
+
+  var n = 0;
+  groups.forEach(function(g){
+    g.steps = g.steps.map(function(c){
+      return { n: ++n,
+        fromMod:  guideModName(c.from.mod, c.from.inst),
+        fromJack: guideJackName(c.from.mod, c.from.jack),
+        toMod:    guideModName(c.to.mod, c.to.inst),
+        toJack:   guideJackName(c.to.mod, c.to.jack),
+        note: c.note || "" };
+    });
+  });
+  /* An unnamed group only needs a heading when there are named ones to tell it
+     apart from. */
+  var named = groups.filter(function(g){ return g.name; }).length;
+  groups.forEach(function(g){ g.title = g.name || (named ? "Patch" : ""); });
+
+  return { name: patch.name || "Untitled patch", notes: (patch.notes || "").trim(),
+           groups: groups, count: n,
+           modules: Object.keys(parsed.cables.reduce(function(a, c){
+             a[c.from.key] = a[c.to.key] = 1; return a; }, {})).length };
+}
+
+function guideHTML(){
+  var g = buildGuide();
+  var h = '<div id="guidedoc"><h1>' + esc(g.name) + "</h1>";
+  h += '<div class="gmeta">' + g.count + " cable" + (g.count === 1 ? "" : "s") +
+       " · " + g.modules + " module" + (g.modules === 1 ? "" : "s") + "</div>";
+  if (g.notes) h += '<div class="gnotes">' + esc(g.notes).replace(/\n/g, "<br>") + "</div>";
+  if (!g.count) h += '<div class="gempty">Nothing to patch yet. Write some cables and this fills in.</div>';
+
+  g.groups.forEach(function(grp){
+    if (grp.title) h += "<h2>" + esc(grp.title) + "</h2>";
+    if (grp.setup.length){
+      h += "<h3>Set up</h3><table class='gset'>";
+      grp.setup.forEach(function(s){
+        h += '<tr><td class="gmod">' + esc(s.name) + "</td><td>" +
+          s.params.map(function(p){
+            return '<span class="gparam"><b>' + esc(p.name) + "</b> " + esc(p.value) + "</span>";
+          }).join("") + "</td></tr>";
+      });
+      h += "</table>";
+    }
+    if (grp.steps.length){
+      if (grp.setup.length) h += "<h3>Patch</h3>";
+      h += "<table class='gsteps'>";
+      grp.steps.forEach(function(s){
+        h += '<tr><td class="gn">' + s.n + "</td>" +
+          '<td class="gmod">' + esc(s.fromMod) + "</td>" +
+          '<td class="gj">' + esc(s.fromJack) + "</td>" +
+          '<td class="garr">&rarr;</td>' +
+          '<td class="gmod">' + esc(s.toMod) + "</td>" +
+          '<td class="gj">' + esc(s.toJack) + "</td></tr>";
+        if (s.note)
+          h += '<tr class="grow-note"><td></td><td colspan="5">' + esc(s.note) + "</td></tr>";
+      });
+      h += "</table>";
+    }
+  });
+  return h + "</div>";
+}
+
+function guideMarkdown(){
+  var g = buildGuide();
+  var L = ["# " + g.name, "",
+           g.count + " cable" + (g.count === 1 ? "" : "s") +
+           " · " + g.modules + " module" + (g.modules === 1 ? "" : "s"), ""];
+  if (g.notes) L.push(g.notes, "");
+  g.groups.forEach(function(grp){
+    if (grp.title) L.push("## " + grp.title, "");
+    if (grp.setup.length){
+      L.push("**Set up**", "");
+      grp.setup.forEach(function(s){
+        L.push("- " + s.name + ": " + s.params.map(function(p){
+          return p.name + " " + p.value; }).join(", "));
+      });
+      L.push("");
+    }
+    grp.steps.forEach(function(s){
+      L.push(s.n + ". " + s.fromMod + " **" + s.fromJack + "** → " +
+             s.toMod + " **" + s.toJack + "**" +
+             (s.note ? "  \n   " + s.note : ""));
+    });
+    if (grp.steps.length) L.push("");
+  });
+  return L.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\s+$/, "") + "\n";
+}
 
 function toPatchBook(){
   var lines = ["// Exported from the modular reference patch tool",
@@ -3008,7 +3199,7 @@ document.getElementById("babout").addEventListener("click", function(){
    the patch file.
 */
 var LS_UI = "patching-ui-v1";
-var ui = { sidebar:400, msgs:180, zoom:1, focus:"" };
+var ui = { sidebar:400, msgs:180, zoom:1, focus:"", view:"diagram" };
 try { var u = JSON.parse(lsGet(LS_UI)); if (u) for (var k in u) ui[k] = u[k]; } catch(e){}
 function saveUI(){ try { localStorage.setItem(LS_UI, JSON.stringify(ui)); } catch(e){} }
 /* Full-width focus for either pane. One at a time, Escape restores, and the
@@ -3034,8 +3225,41 @@ function applyFocus(){
   be.innerHTML = ui.focus === "editor" ? ICON_COLLAPSE : ICON_EXPAND;
   bc.innerHTML = ui.focus === "canvas" ? ICON_COLLAPSE : ICON_EXPAND;
   be.title = ui.focus === "editor" ? "Restore split view" : "Expand the editor (Esc to restore)";
-  bc.title = ui.focus === "canvas" ? "Restore split view" : "Expand the diagram (Esc to restore)";
+  bc.title = ui.focus === "canvas" ? "Restore split view"
+    : "Expand the " + (ui.view === "guide" ? "guide" : "diagram") + " (Esc to restore)";
 }
+/* The guide is rebuilt on switch and on every render, not cached. It's a pure
+   function over the parse, and a patch big enough for that to cost anything
+   would be too big to follow anyway. */
+function renderGuide(){
+  if (ui.view !== "guide") return;
+  document.getElementById("guidewrap").innerHTML = guideHTML();
+}
+function setView(which){
+  ui.view = which === "guide" ? "guide" : "diagram";
+  var g = ui.view === "guide";
+  document.getElementById("guidewrap").style.display  = g ? "block" : "none";
+  document.getElementById("canvaswrap").style.display = g ? "none" : "flex";
+  document.getElementById("zoomctl").style.display    = g ? "none" : "flex";
+  document.getElementById("guidectl").style.display   = g ? "flex" : "none";
+  document.getElementById("vguide").classList.toggle("on", g);
+  document.getElementById("vdiagram").classList.toggle("on", !g);
+  document.getElementById("focusc").title =
+    (ui.focus === "canvas" ? "Restore split view" : "Expand the " + (g ? "guide" : "diagram")) +
+    (ui.focus === "canvas" ? "" : " (Esc to restore)");
+  if (g) renderGuide(); else setTimeout(fitWidth, 0);
+  saveUI();
+}
+document.getElementById("vdiagram").addEventListener("click", function(){ setView("diagram"); });
+document.getElementById("vguide").addEventListener("click", function(){ setView("guide"); });
+document.getElementById("gprint").addEventListener("click", function(){ window.print(); });
+document.getElementById("gcopy").addEventListener("click", function(){
+  var b = this;
+  navigator.clipboard.writeText(guideMarkdown()).then(function(){
+    b.textContent = "Copied"; setTimeout(function(){ b.textContent = "Copy"; }, 1200);
+  }).catch(function(){ b.textContent = "Copy failed"; setTimeout(function(){ b.textContent = "Copy"; }, 1600); });
+});
+
 function setFocus(which){
   ui.focus = ui.focus === which ? "" : which;
   applyFocus(); saveUI();
@@ -3130,6 +3354,7 @@ if (!M.length){
   document.getElementById("pname").value = patch.name || "";
   document.getElementById("notes").value = patch.notes || "";
   applyLayout();
+  setView(ui.view);   /* after applyLayout, so the pane it shows is the one that stays */
   paintExamples();
   paintList();
   render();
