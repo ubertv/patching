@@ -259,9 +259,32 @@ console.log("\nbackward lanes");
   const v = ctx.build();
   const backEdge = v.edges.filter((e) => e.back && !e.self)[0];
   ok("the setup produced a backward edge", !!backEdge);
-  const low = Math.max(...v.nodes.map((n) => n.y + n.h));
-  ok("its lane sits below every box it spans, never above",
-     backEdge && backEdge.yb > low, backEdge && [backEdge.yb, low]);
+  const inAnyBox = (y) => v.nodes.some((n) => y > n.y - 12 && y < n.y + n.h + 12);
+  const below = Math.max(backEdge.a.y + backEdge.a.h, backEdge.b.y + backEdge.b.h);
+  ok("its lane sits below its endpoints, never above",
+     backEdge && backEdge.yb > below, backEdge && [backEdge.yb, below]);
+  ok("and inside no box", backEdge && !inAnyBox(backEdge.yb), backEdge && backEdge.yb);
+}
+
+// The lane takes the nearest clear corridor. A box in a lower row, inside the
+// span but nowhere near the direct path, must not drag the return down below
+// it and back up.
+{
+  const src = "vco:saw -> mixer:in-1\nmixer:out -> vcf:cutoff";
+  el("src").value = src;
+  ctx.patch = { name: "Corridor", src: src, notes: "", pos: {
+    vcf:   { x: 0,   y: 20 },
+    mixer: { x: 600, y: 20 },
+    vco:   { x: 250, y: 320 },
+  } };
+  const v = ctx.build();
+  const backEdge = v.edges.filter((e) => e.back && !e.self)[0];
+  const lowBox = v.nodes.find((n) => n.key === "vco");
+  ok("a distant low box does not drag the lane down",
+     backEdge && backEdge.yb < lowBox.y - 12,
+     backEdge && [backEdge.yb, lowBox.y]);
+  ok("the lane still clears its endpoints",
+     backEdge && backEdge.yb > Math.max(backEdge.a.y + backEdge.a.h, backEdge.b.y + backEdge.b.h));
 }
 
 // Clicking a cable selects the line that wrote it. The arithmetic is the part

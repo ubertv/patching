@@ -1437,17 +1437,39 @@ function build(){
        open canvas. When the geometry contradicts the classification, geometry
        wins: route below everything, like any other return. */
     var gutter = e.wrap && e.b.y > e.a.y + e.a.h;
-    var clear = 0;
+    var boxes = [];
     list.forEach(function(n){
       if (n.x + n.w < lo || n.x > hi) return;
       if (gutter && n.y >= e.b.y) return;
-      clear = Math.max(clear, n.y + n.h);
+      boxes.push(n);
     });
-    var y = clear + 20, moved = true;
-    while (moved){
-      moved = false;
+
+    /* The lane wants the NEAREST clear corridor, not the bottom of the world.
+       Clearing everything in the span meant one box from a lower row anywhere
+       along the way dragged the whole return down below it and back up, past
+       boxes it was never going to hit. So: start just below the two endpoint
+       boxes, and move down only on contact. A wrap still starts in its gutter,
+       just above the row it descends into. */
+    var y;
+    if (gutter){
+      var clear = 0;
+      boxes.forEach(function(n){ clear = Math.max(clear, n.y + n.h); });
+      y = clear + 20;
+    } else {
+      y = Math.max(e.a.y + e.a.h, e.b.y + e.b.h) + 20;
+    }
+    /* One loop settles both constraints together: out of any box it lands in,
+       and out of any other lane's way. A lane dodge can push into a box and a
+       box dodge into a lane, so they have to be checked as one fixpoint. The
+       guard is paranoia; each push moves strictly down. */
+    var stable = false, guard = 0;
+    while (!stable && guard++ < 80){
+      stable = true;
+      boxes.forEach(function(n){
+        if (y > n.y - 12 && y < n.y + n.h + 12){ y = n.y + n.h + 20; stable = false; }
+      });
       lanes.forEach(function(L){
-        if (Math.abs(L.y - y) < 12 && L.hi >= lo && L.lo <= hi){ y = L.y + 14; moved = true; }
+        if (Math.abs(L.y - y) < 12 && L.hi >= lo && L.lo <= hi){ y = L.y + 14; stable = false; }
       });
     }
     lanes.push({ lo:lo, hi:hi, y:y });

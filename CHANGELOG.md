@@ -34,6 +34,12 @@ is waiting on.
   merged stereo pair written as two lines selects both. The clickable area is
   far wider than the drawn stroke, so no aiming.
 
+- **A backward cable takes the nearest clear corridor now, not the long way
+  round.** Its lane used to route below everything in its horizontal span, so
+  one box from a lower row anywhere along the way dragged the whole return down
+  past it and back up, even with a clear gap right under the endpoints. The
+  lane now starts just below its two endpoint boxes and moves down only when it
+  actually lands in a box or another lane's path.
 - **A backward cable could draw its lane across open canvas, well above the
   boxes it crossed.** A backward edge classified as a row-wrap only cleared
   boxes in its own row and above, which assumes the destination sits lower
