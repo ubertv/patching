@@ -10,6 +10,10 @@ scores/scores.js
 ROADMAP.md
 SETUP.md
 
+# Working draft. Goes in the repo once it's a specification rather than notes,
+# because the format is the part anyone else would build on.
+DESIGN.md
+
 # The library workbench. A local authoring tool, not part of the app: it holds
 # the whole library including gear that isn't in the public one, and exports
 # what ships. The export is what belongs in the repo, not the tool or its data.

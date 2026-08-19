@@ -155,6 +155,13 @@ h2{font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:var(--i
   margin:16px 0 8px; font-weight:600}
 h2:first-child{margin-top:0}
 .hint{color:var(--ink3); font-size:11.5px; margin-top:6px; line-height:1.55}
+.issue{display:flex; gap:9px; align-items:baseline; padding:5px 8px; border-radius:5px;
+  margin-bottom:3px; font-size:12.5px}
+.issue.error{background:var(--err-bg); color:var(--err-ink)}
+.issue.warn{background:var(--warn-bg); color:var(--warn-ink)}
+.issue .where{font-family:var(--mono); font-size:11.5px; opacity:.85; flex:none}
+.issue[data-go]{cursor:pointer}
+.issue[data-go]:hover{outline:1px solid var(--line2)}
 .field{display:flex; gap:8px; align-items:center; margin-bottom:6px}
 .field label{width:104px; flex:none; color:var(--ink2); font-size:12px}
 .grid2{display:grid; grid-template-columns:1fr 1fr; gap:6px 12px}
@@ -187,6 +194,11 @@ td select{padding:2px 4px}
 .xdo .mono{font-weight:600}
 .xwhere{color:var(--ink3); font-size:12.5px; margin-bottom:14px}
 .xcount{color:var(--ink3); font-size:12px; margin-top:12px}
+.xpick{max-height:220px; overflow:auto; border:1px solid var(--line); border-radius:6px;
+  padding:4px 8px; margin-top:6px}
+.xrow{display:flex; gap:7px; align-items:baseline; padding:2px 0; font-size:12.5px;
+  cursor:pointer}
+.xrow input{width:auto}
 .xlink{background:none; border:none; color:var(--accent); padding:6px 2px;
   font-size:13px; cursor:pointer; text-decoration:underline}
 .xlink:hover{background:none; filter:brightness(1.15)}
@@ -219,6 +231,7 @@ td select{padding:2px 4px}
       <hr>
       <button id="bimport">Import…<small>A library.js, or module JSON</small></button>
       <button id="bexport">Export library<small>Save as lib/library.js</small></button>
+      <button id="bvalidate">Validate library<small>The checks a pull request runs</small></button>
     </div>
   </div>
 
@@ -543,6 +556,79 @@ function uniqueId(jacks, base){
   return id;
 }
 
+/* ------------------------------------------------------------- validation --- */
+/* The same rules as test/validate.mjs, which is what a pull request runs.
+   test/rules-drift.mjs fails CI if the two copies disagree, so a change here
+   has to be made there too. Errors mean something downstream breaks; warnings
+   mean the entry is thin. */
+var ID_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+function validateLibrary(mods){
+  var issues = [], seen = {};
+  mods.forEach(function(m){
+    function err(msg, jack){ issues.push({ level:"error", id:m.id, jack:jack, msg:msg }); }
+    function warn(msg, jack){ issues.push({ level:"warn", id:m.id, jack:jack, msg:msg }); }
+
+    if (!m.id){ err("No id. Patch source has nothing to reference."); return; }
+    if (!ID_RE.test(m.id)) err("id must be lowercase letters, digits and hyphens.");
+    if (seen[m.id]) err("Duplicate id, also in " + seen[m.id] + ".");
+    seen[m.id] = "this library";
+    if (!m.name) err("No name. It's what gets drawn on the box.");
+    if (m.hp !== undefined && (typeof m.hp !== "number" || m.hp <= 0))
+      err("hp must be a positive number, or absent.");
+    if (!m.tags || !m.tags.length) warn("No tags, so it has no colour and no group.");
+    if (m.tags && m.tags.some(function(t){ return typeof t !== "string" || !t.trim(); }))
+      err("Empty or non-string tag.");
+    if (m.generic !== undefined && typeof m.generic !== "boolean")
+      err("generic must be true or absent.");
+    if (m.generic && m.mfr) warn("Marked generic but names a manufacturer.");
+    if (!m.generic && !m.mfr) warn("Real module with no manufacturer.");
+
+    var jacks = m.jacks || [], ids = {}, labels = {}, hasOut = false;
+    if (!jacks.length) warn("No jacks.");
+
+    jacks.forEach(function(j){
+      if (!j.id){ err("Jack with no id.", j.label || "?"); return; }
+      if (!ID_RE.test(j.id)) err("Jack id must be lowercase letters, digits and hyphens.", j.id);
+      if (ids[j.id]) err("Duplicate jack id.", j.id);
+      ids[j.id] = 1;
+
+      /* Keyed by direction as well as label: a stereo module rightly has an
+         R in and an R out and neither is a mistake. */
+      if (!j.label) warn("No label, so the panel silkscreen is lost.", j.id);
+      else {
+        var k = j.dir + " " + j.label.toLowerCase();
+        if (labels[k]) warn("Two " + j.dir + " jacks labelled " + j.label + ".", j.id);
+        labels[k] = 1;
+      }
+
+      if (DIRS.indexOf(j.dir) < 0) err("dir must be one of " + DIRS.join(", ") + ".", j.id);
+      if (SIGS.indexOf(j.sig) < 0) err("sig must be one of " + SIGS.join(", ") + ".", j.id);
+      if (j.dir === "out" || j.dir === "both") hasOut = true;
+
+      ["x","y"].forEach(function(a){
+        if (j[a] === undefined) return;
+        if (typeof j[a] !== "number" || j[a] < 0 || j[a] > 1)
+          err(a + " must be a fraction of the panel, 0 to 1.", j.id);
+      });
+      if ((j.x === undefined) !== (j.y === undefined))
+        err("Has one of x/y but not the other.", j.id);
+
+      if (j.normalled !== undefined && !String(j.normalled).trim())
+        warn("Empty normalled. Drop the field or say what it disconnects.", j.id);
+    });
+
+    /* Output modules and expanders are all input by design. */
+    var isSink = (m.tags || []).some(function(t){ return t === "output" || t === "expander"; });
+    if (jacks.length && !hasOut && !isSink)
+      warn("No output. Nothing can be patched from it.");
+  });
+  return issues;
+}
+function issuesFor(id){
+  return validateLibrary(everything()).filter(function(i){ return i.id === id; });
+}
+
 /* -------------------------------------------------------------- rendering --- */
 
 var flash = "";          /* transient note in the status bar, cleared on the next action */
@@ -557,6 +643,8 @@ function drawStat(){
   var all = everything();
   var changes = Object.keys(over).length;
   var s = "<b>"+all.filter(inPalette).length+"</b> of "+all.length+" on";
+  var errs = validateLibrary(all).filter(function(i){ return i.level === "error"; }).length;
+  if (errs) s += ' · <span style="color:var(--bad)">'+errs+(errs===1?' error':' errors')+'</span>';
   /* Say where the work is, because the answer differs by browser and by how the
      page was opened, and getting it wrong loses someone's afternoon. */
   if (!STORAGE_OK){
@@ -751,6 +839,7 @@ function drawMid(){
     h += '<div class="row">'+
       '<input type="text" id="addjack" class="mono" placeholder="Add jack:  V/OCT i p" style="flex:1;min-width:240px">'+
       '<button id="badd">Add</button>'+
+      '<button id="bbulk">Bulk add…</button>'+
       (!inFile(e.id)
         ? '<button id="bdel" style="margin-left:auto">Delete module</button>'
         : '<button id="bcopy" style="margin-left:auto">Duplicate as a variant</button>'+
@@ -758,7 +847,19 @@ function drawMid(){
       '<div class="hint">Direction <span class="mono">i o b</span>, type <span class="mono">a</span>udio '+
       '<span class="mono">p</span>itch <span class="mono">c</span>v <span class="mono">g</span>ate '+
       '<span class="mono">k</span>=clock <span class="mono">m</span>ulti. Both optional, both stick. '+
-      'Paste several lines to add a whole panel at once.</div>';
+      'Paste several lines to add a whole panel at once, or use <b>Bulk add</b> to preview first.</div>';
+  }
+
+  /* Problems, on every module, editing or not. Errors are what the export and a
+     pull request would be rejected for; warnings are what makes an entry thin. */
+  var iss = issuesFor(e.id);
+  if (iss.length){
+    h += '<h2>Problems · ' + iss.length + '</h2>';
+    iss.forEach(function(i){
+      h += '<div class="issue ' + (i.level === "error" ? "error" : "warn") + '">' +
+           '<span class="where">' + esc(i.jack || "module") + '</span>' +
+           '<span>' + esc(i.msg) + '</span></div>';
+    });
   }
   host.innerHTML = h;
 }
@@ -843,6 +944,7 @@ document.getElementById("mid").addEventListener("click", function(ev){
     over[id] = copy; sel = id; save(); redraw(); return;
   }
   if (ev.target.id === "badd"){ addJack(); return; }
+  if (ev.target.id === "bbulk"){ bulkSheet(); return; }
   if (ev.target.id === "bedit"){ editing = true; drawMid(); return; }
   if (ev.target.id === "bdone"){ editing = false; drawMid(); return; }
   if (ev.target.id === "brevert"){
@@ -948,21 +1050,28 @@ document.addEventListener("keydown", function(ev){
 
 /* ---------------------------------------------------------------- export --- */
 
-function exportSource(){
-  /* Everything that differs from the files in lib/, whether you invented the
-     module or corrected one. A relabelled jack is worth as much as a new
-     module, since it fixes something everyone else has. Loading this file after
-     the others makes it win. */
-  var mods = Object.keys(over).sort().map(function(id){
-    return JSON.parse(JSON.stringify(over[id]));
-  });
+function exportSource(ids){
+  /* With no selection: everything that differs from the files in lib/, whether
+     you invented the module or corrected one. A relabelled jack is worth as
+     much as a new module, since it fixes something everyone else has. Loading
+     this file after the others makes it win.
+
+     With a selection: exactly those modules, shipped ones included, so "send
+     someone these three" works whether or not you ever edited them. A shipped
+     module is copied as it stands, minus the page's own bookkeeping fields. */
+  var mods = (ids || Object.keys(over).sort()).map(function(id){
+    var e = over[id] || byId(id);
+    if (!e) return null;
+    var c = JSON.parse(JSON.stringify(e));
+    delete c.src; delete c.srcName; delete c.obj; delete c.edited;
+    return c;
+  }).filter(Boolean);
   return [
-    "// Your modules, written by modules.html.",
-    "// Drop this in as lib/library.js. Both pages read it automatically.",
+    "// Modules chosen in modules.html's export sheet.",
+    "// Drop this in as lib/library.js, or File → Import… merges it by id.",
     "//",
-    "// Every entry here is something that differs from the other files in lib/:",
-    "// a module you made, a correction to a shipped one, or one switched off.",
-    "// Load order is precedence order, and this file loads last.",
+    "// Load order is precedence order, and this file loads last, so an entry",
+    "// here wins over one with the same id in another lib/ file.",
     "//",
     "// `off: true` keeps a module out of the patch editor's autocomplete. Cosmetic",
     "// only: it still parses and still draws.",
@@ -977,8 +1086,114 @@ function exportSource(){
   ].join("\n");
 }
 
+document.getElementById("bvalidate").addEventListener("click", function(){
+  var issues = validateLibrary(everything());
+  var errs = issues.filter(function(i){ return i.level === "error"; });
+  var h = "<h3>Validate</h3>";
+  if (!issues.length){
+    h += '<div class="hint">Nothing to report across ' + everything().length + " modules and " +
+      everything().reduce(function(a,m){ return a + (m.jacks||[]).length; }, 0) + " jacks. " +
+      "These are the same checks a pull request runs.</div>";
+  } else {
+    h += '<div class="hint" style="margin-bottom:10px">' + errs.length +
+      (errs.length === 1 ? " error" : " errors") + " and " + (issues.length - errs.length) +
+      (issues.length - errs.length === 1 ? " warning" : " warnings") +
+      ". Click one to open the module. A pull request is blocked by errors, not warnings.</div>";
+    issues.forEach(function(i){
+      h += '<div class="issue ' + (i.level === "error" ? "error" : "warn") +
+        '" data-go="' + esc(i.id) + '">' +
+        '<span class="where">' + esc(i.id) + (i.jack ? ":" + esc(i.jack) : "") + '</span>' +
+        '<span>' + esc(i.msg) + '</span></div>';
+    });
+  }
+  h += '<div class="row"><button id="vclose" class="primary">Close</button></div>';
+  openSheet(h);
+  document.getElementById("sheet").onclick = function(ev){
+    if (ev.target.id === "vclose"){ closeSheet(); return; }
+    var g = ev.target.closest("[data-go]");
+    if (g){ sel = g.dataset.go; closeSheet(); redraw(); }
+  };
+});
+
+/* Bulk add with a preview, so a pasted panel's worth of jacks can be read
+   before it lands. Runs the same sticky rules the real add will, or what you
+   see is not what you get. */
+function bulkSheet(){
+  var e = byId(sel); if (!e) return;
+  openSheet(
+    "<h3>Bulk add jacks to " + esc(e.name || e.id) + "</h3>" +
+    '<div class="hint" style="margin-bottom:8px">One jack per line. Direction and type go at ' +
+      'the end of the line and both stick to the next line, so a run of outputs states it once.</div>' +
+    '<textarea id="bulktext" style="height:140px" placeholder="V/OCT i p&#10;FM c&#10;OUT o a"></textarea>' +
+    '<h2>Preview</h2><div id="bulkprev"></div>' +
+    '<div class="row"><button class="primary" id="bulkgo">Add these</button>' +
+      '<button id="bulkcancel">Cancel</button>' +
+      '<label style="margin-left:auto;color:var(--ink2);font-size:12px">' +
+      '<input type="checkbox" id="bulkreplace" style="width:auto"> Replace existing jacks</label></div>'
+  );
+  var ta = document.getElementById("bulktext");
+  function preview(){
+    var d = sticky.dir, s = sticky.sig, out = [], ids = [];
+    ta.value.split(/\r?\n/).forEach(function(line){
+      var save = { dir: sticky.dir, sig: sticky.sig };
+      sticky.dir = d; sticky.sig = s;
+      var p = parseJack(line);
+      sticky.dir = save.dir; sticky.sig = save.sig;
+      if (!p || !p.label) return;
+      d = p.dir; s = p.sig;
+      out.push(p);
+    });
+    var h = "<table><thead><tr><th>Label</th><th>id</th><th>Dir</th><th>Type</th></tr></thead><tbody>";
+    out.forEach(function(p){
+      var id = uniqueId(ids.map(function(x){ return { id:x }; }), slug(p.label));
+      ids.push(id);
+      h += "<tr><td>" + esc(p.label) + '</td><td class="mono">' + esc(id) +
+        "</td><td>" + p.dir + "</td><td>" +
+        '<span class="swatch" style="border-top-color:' + SIGCOLOR[p.sig] +
+        ";border-top-style:" + SIGDASH[p.sig] + '"></span> ' + p.sig + "</td></tr>";
+    });
+    h += "</tbody></table>";
+    document.getElementById("bulkprev").innerHTML =
+      out.length ? h : '<div class="hint">Nothing yet.</div>';
+  }
+  ta.addEventListener("input", preview);
+  preview();
+  document.getElementById("sheet").onclick = function(ev){
+    if (ev.target.id === "bulkcancel"){ closeSheet(); return; }
+    if (ev.target.id === "bulkgo"){
+      if (document.getElementById("bulkreplace").checked){
+        var m = byId(sel); if (m){ mutable(m).jacks = []; save(); }
+      }
+      addJackLines(ta.value);
+      closeSheet(); redraw();
+    }
+  };
+  ta.focus();
+}
+
 document.getElementById("bexport").addEventListener("click", function(){
-  var src = exportSource();
+  /* The checklist covers the whole library. Your differences come first and
+     start ticked, so the common case is unchanged: open, save, done. Shipped
+     modules follow unticked, there to be picked when the point is "send
+     someone these three" rather than "save my changes". */
+  var diffs = Object.keys(over).sort();
+  var rest = everything().map(function(e){ return e.id; })
+    .filter(function(id){ return !over[id]; }).sort();
+  var all = diffs.concat(rest);
+  function row(id, on){
+    var e = byId(id) || over[id];
+    var what = !over[id] ? "shipped"
+      : !inFile(id) ? "yours"
+      : (over[id].off && Object.keys(over[id]).length <= 2 ? "switched off" : "correction");
+    return '<label class="xrow"><input type="checkbox" data-x="' + esc(id) + '"' +
+      (on ? " checked" : "") + '> ' + esc(e && e.name || id) +
+      ' <span class="mono" style="color:var(--ink3)">' + esc(id) +
+      '</span><span style="margin-left:auto;color:var(--ink3)">' + what + '</span></label>';
+  }
+  var pick = diffs.map(function(id){ return row(id, true); }).join("") +
+    (diffs.length && rest.length
+      ? '<div class="xcount" style="margin:6px 0 2px">shipped, exported only if ticked</div>' : "") +
+    rest.map(function(id){ return row(id, false); }).join("");
   openSheet(
     '<h3>Export library</h3>'+
     (STORAGE_OK ? '' :
@@ -996,12 +1211,16 @@ document.getElementById("bexport").addEventListener("click", function(){
         '<a href="https://github.com/ubertv/patching" target="_blank" rel="noopener">take a copy from the repo</a>.'
       : 'Both pages read that file at boot. Nothing else to set up.')+
       (canPick() ? ' The dialogue lets you save it straight into place.' : '')+'</div>'+
+    '<div class="xcount" style="margin-top:10px">What goes in the file '+
+      '<button id="xall" class="xlink">all</button> '+
+      '<button id="xnone" class="xlink">none</button> '+
+      '<button id="xdiff" class="xlink">just my changes</button></div>'+
+    '<div class="xpick">'+pick+'</div>'+
     '<div class="row">'+
       '<button id="dl" class="primary">'+esc(saveLabel("library.js"))+'</button>'+
       '<button id="cp" class="xlink">Copy the text instead</button>'+
     '</div>'+
-    '<div class="xcount">'+Object.keys(over).length+' module'+
-      (Object.keys(over).length===1?'':'s')+' differ from lib/library.js</div>'+
+    '<div class="xcount" id="xcount"></div>'+
     '<details><summary>Why export, and how to read one back</summary><div>'+
       'Browser storage is one browser on one machine, and clearing your browsing data takes '+
       'it with it. The file survives that, moves to another computer, and can go in the repo.'+
@@ -1010,10 +1229,37 @@ document.getElementById("bexport").addEventListener("click", function(){
       'what you have.'+
     '</div></details>'
   );
+  /* The text is built at the moment of saving, from whatever is ticked then.
+     A snapshot taken when the sheet opened would quietly ignore the checklist. */
+  function ticked(){
+    var ids = [];
+    document.querySelectorAll("#sheet [data-x]").forEach(function(b){
+      if (b.checked) ids.push(b.dataset.x); });
+    return ids;
+  }
+  function setAll(fn){
+    document.querySelectorAll("#sheet [data-x]").forEach(function(b){
+      b.checked = fn(b.dataset.x); });
+    sync();
+  }
+  function sync(){
+    var n = ticked().length;
+    document.getElementById("xcount").textContent =
+      n + " of " + all.length + " going in the file";
+    document.getElementById("dl").disabled = !n;
+    document.getElementById("cp").disabled = !n;
+  }
+  document.getElementById("xall").onclick  = function(){ setAll(function(){ return true; }); };
+  document.getElementById("xnone").onclick = function(){ setAll(function(){ return false; }); };
+  document.getElementById("xdiff").onclick = function(){ setAll(function(id){ return !!over[id]; }); };
+  document.querySelectorAll("#sheet [data-x]").forEach(function(b){ b.onchange = sync; });
+  sync();
   document.getElementById("dl").onclick = function(){
-    saveFile("library.js", src, this, hosted() ? "a safe place" : "lib/library.js");
+    saveFile("library.js", exportSource(ticked()), this, hosted() ? "a safe place" : "lib/library.js");
   };
-  document.getElementById("cp").onclick = function(){ copy(src, hosted() ? "Copied. Paste it into a file and keep it." : "Copied. Paste it into lib/library.js"); };
+  document.getElementById("cp").onclick = function(){
+    copy(exportSource(ticked()), hosted() ? "Copied. Paste it into a file and keep it." : "Copied. Paste it into lib/library.js");
+  };
 });
 
 /* -------------------------------------------------------------- importing --- */

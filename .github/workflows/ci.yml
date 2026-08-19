@@ -1,0 +1,15 @@
+# Runs on every push and pull request. A contribution that breaks the library
+# rules or the parser fails here before anyone reads the diff.
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate the shipped library
+        run: node test/validate.mjs lib
+      - name: Parser and guide against the shipped examples
+        run: node test/guide-test.mjs
+      - name: Validation rules agree between test/ and modules.html
+        run: node test/rules-drift.mjs

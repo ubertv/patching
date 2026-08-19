@@ -864,7 +864,15 @@ function parse(text){
     /* Comments: # or // at line start or after whitespace. A # tight against the
        preceding character is the instance marker — vco#2 — so it must survive. */
     var line = raw.replace(/(^|\s)(#|\/\/).*$/, "").trim();
-    if (!line) return;
+    /* A parameter block is the `*` header plus the `|` lines directly under it,
+       and a BLANK line ends it. Without this, a `|` line bound to a header any
+       distance above, which made its meaning depend on layout nowhere near it.
+       A comment-only line stays transparent: annotating inside a block is
+       legitimate, so only genuine whitespace terminates. */
+    if (!line){
+      if (!raw.trim()) lastParamMod = null;
+      return;
+    }
 
     /* Voice header: a bare NAME: with no arrow and no leading marker. */
     if (/^[^*|\-].*:$/.test(line) && !/(->|>>|→|[pgtc]>)/.test(line)){
@@ -902,12 +910,16 @@ function parse(text){
       if (!byId(pmod.replace(/#[a-z0-9\-]+$/i, "")))
         out.errors.push({ line:ln, text:raw, msg:"Parameters for unknown module <b>"+esc(pmod)+"</b>. "+
           near(pmod.toLowerCase(), allModules().map(function(x){ return x.id; })) });
-      if (pm[2]) addParams(out, pmod, pm[2], ln);
+      /* Unconditional: addParams decides what an empty block means, so there's
+         one place that knows rather than two that have to agree. */
+      addParams(out, pmod, pm[2], ln);
       return;
     }
     if (/^\|/.test(line)){
       if (!lastParamMod){
-        out.errors.push({ line:ln, text:raw, msg:"Parameter line with no module above it. Start the block with <span class='mono'>* module:</span>." });
+        out.errors.push({ line:ln, text:raw, msg:"Parameter line with no block to join. "+
+          "Start with <span class='mono'>* module:</span> and keep <span class='mono'>|</span> lines "+
+          "directly under it — a blank line ends the block." });
         return;
       }
       addParams(out, lastParamMod, line.replace(/^\|\s*/, ""), ln);
@@ -1036,6 +1048,12 @@ function parse(text){
 }
 
 function addParams(out, mod, str, ln){
+  /* A bare `* vco:` places the module and says nothing about it. Worth having:
+     it's how you put something on the page to think about before you've decided
+     what it connects to, and it gives every module a home in the text, which is
+     where a settings dialog would later have to write. Registering the key with
+     no parameters is enough — build() gives anything in `params` a box. */
+  if (!str.trim()){ out.params[mod] = out.params[mod] || []; return; }
   str.split("|").forEach(function(chunk){
     chunk = chunk.trim(); if (!chunk) return;
     var eq = chunk.indexOf("=");
@@ -2782,10 +2800,14 @@ document.getElementById("bhelp").addEventListener("click", function(){
     '<h3 style="margin-top:16px">Parameters</h3>'+
     '<div style="color:var(--dim)">Knob settings, drawn inside the module box. Cables are only '+
       'half a patch. If you can\'t rebuild it from the diagram, it isn\'t documented. Single line '+
-      'or block, both fine.</div>'+
+      'or block, both fine. A block is the <span class="mono">*</span> line plus the '+
+      '<span class="mono">|</span> lines directly under it: a blank line ends it, a comment '+
+      'doesn\'t.</div>'+
     '<pre class="mono" style="color:var(--dim);font-size:11.5px">* vcf: cutoff = 40% | resonance = 3 o\'clock\n\n* delay:\n  | time = 3:8\n  | feedback = 45%\n  | mix = 30%</pre>'+
     '<div style="color:var(--dim)">A module with parameters and no cables still gets a box, so '+
-      'you can record settings for something that isn\'t patched into anything.</div>'
+      'you can record settings for something that isn\'t patched into anything. '+
+      '<span class="mono">* vcf:</span> on its own puts the module on the page and says nothing '+
+      'about it, for when you want to look at something before deciding what it connects to.</div>'
   );
 });
 

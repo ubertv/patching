@@ -6,6 +6,31 @@ each of them, so a screenshot says which copy someone is running.
 `0.x` means the format may still move. See the note at the bottom for what 1.0
 is waiting on.
 
+## Unreleased
+
+- A parameter block now ends at a blank line. Previously a `|` continuation
+  bound to the last `* module:` header any distance above it, so a stray line
+  could silently attach its settings to the wrong module. The block is the `*`
+  line plus the `|` lines directly under it; comments inside are fine. An
+  orphaned `|` line is an error naming the rule. Patch and score both. No
+  shipped example or existing patch relied on the old behaviour.
+
+- Tests now ship in `test/` and run on every push and pull request: the library
+  validator, the parser and guide against the shipped examples, and a drift
+  check that fails if the validation rules in `test/` and `modules.html` stop
+  agreeing.
+- `modules.html` validates as you type: problems listed on each module,
+  **File → Validate library** for the lot, and an error count in the status
+  bar. Same rules as CI, so what passes locally passes the pull request.
+- **Bulk add** in `modules.html`: paste a panel's worth of jacks and preview
+  exactly what will land before it does.
+- Export chooses its modules: the export sheet lists the whole library with a
+  checkbox each. Your differences from `lib/library.js` come first and start
+  ticked, shipped modules follow unticked, with **all**, **none** and **just my
+  changes** shortcuts. So "send someone these three" works whether or not you
+  ever edited them. The saved file is a normal library that **Import…** merges
+  by id.
+
 ## 0.1.2 — 17 August 2026
 
 Saving a file, made to feel like saving a file.
@@ -146,7 +171,11 @@ text and draws the signal flow. `modules.html` manages the module library.
 - Drag to arrange, shift-click and rubber-band to select, group move, and auto
   layout to start again.
 - Light and dark themes. Exports are always light.
-- Export as SVG, PNG, JSON or PatchBook markup.
+- A patch guide: the same patch as numbered instructions to rebuild it, with
+  module names and panel labels in place of the source shorthand, grouped by
+  section, knobs before cables. Its own pane, or Markdown.
+- Export as SVG, PNG, JSON, PatchBook markup or a guide. Cmd+P prints whichever
+  pane you're looking at.
 - Patches, modules and scores are all stored the same way: a plain file in the
   folder as the durable copy, browser storage over the top, and export and
   import as the bridge between them.

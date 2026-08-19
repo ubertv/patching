@@ -427,4 +427,22 @@ HTML file with a print stylesheet. **File → This score as text** gives the sou
 
 ### Contributing
 
-Contributions welcome, especially module data.
+Contributions welcome, especially module data. The bar is the same as for
+everything already in `lib/`: every jack read from a manufacturer manual or a
+panel photograph, never from memory, with the source in the module's `links` so
+the claim stays checkable.
+
+The path: author the module in `modules.html`, which validates as you type
+(**File → Validate library** runs everything at once), then **File → Export
+library** and open a pull request. CI runs the same checks on the PR:
+
+```sh
+node test/validate.mjs lib     # the library rules
+node test/guide-test.mjs       # the parser and guide against the examples
+node test/rules-drift.mjs      # the two copies of the rules still agree
+```
+
+Errors block a merge; warnings don't. The validation rules are deliberately
+duplicated between `test/validate.mjs` and `modules.html` so each page stands
+alone off the filesystem; the drift test fails if the copies disagree, so a
+change to the rules has to land in both.
