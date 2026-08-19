@@ -138,7 +138,9 @@ for (const ex of examples) {
 
   // And nothing should still be written in source shorthand. Both sides must
   // start with a letter, or parameter values like "3:8" and "4:1" read as ids.
-  const shorthand = md.match(/\b[a-z][a-z0-9-]*(?:#[a-z0-9-]+)?:[a-z][a-z0-9-]*/g) || [];
+  // Code spans are exempt: an unresolvable disabled cable in the Not patched
+  // list is deliberately shown as written.
+  const shorthand = md.replace(/`[^`]*`/g, "").match(/\b[a-z][a-z0-9-]*(?:#[a-z0-9-]+)?:[a-z][a-z0-9-]*/g) || [];
   ok("no source shorthand survives", !shorthand.length, shorthand.slice(0, 3));
 
   // Parameter blocks must all be accounted for, none dropped or duplicated.
@@ -175,8 +177,32 @@ const demoMd = ctx.guideMarkdown();
 ok("the commented-out cable is not parsed", ctx.parsed.cables.length === 3, ctx.parsed.cables.length);
 ok("the Notes box appears at the top", /^# Notes demo\n\n.*\n\nRecorded 16 August\./s.test(demoMd), demoMd.split("\n").slice(0, 5));
 ok("a quoted cable note appears under its step", demoMd.includes("the bright one"));
-ok("the header comment does not appear", !demoMd.includes("small case"));
-ok("the disabled cable does not appear", !/\bSUB\b/.test(demoMd));
+ok("the leading comment block joins the preamble",
+   demoMd.indexOf("small case") > -1 && demoMd.indexOf("small case") < demoMd.indexOf("1. "),
+   demoMd.indexOf("small case"));
+ok("the disabled cable is not a step", !/^\d+\..*SUB/m.test(demoMd));
+ok("it is listed under Not patched, resolved to panel names",
+   /## Not patched[\s\S]*VCO \*\*SUB\*\*/.test(demoMd), demoMd.split("## Not patched")[1]);
+
+// A prose comment above a cable becomes that step's annotation; an arrow
+// comment naming modules that do not resolve is listed as written.
+const demo2 = [
+  "seq:cv p> vco:voct",
+  "// the saw does the work",
+  "vco:saw -> out:in-l",
+  "// wibble:foo -> wobble:bar",
+  "// remember to retune before recording",
+].join("\n");
+ctx.patch = { name: "Comments", src: demo2, notes: "", pos: {} };
+ctx.parsed = ctx.parse(demo2);
+const md2 = ctx.guideMarkdown();
+ok("a prose comment lands under the step that follows it",
+   /2\. VCO \*\*SAW\*\*[^\n]*\n   the saw does the work/.test(md2),
+   md2.split("\n").slice(0, 12));
+ok("an unresolvable disabled cable is listed as written",
+   /## Not patched[\s\S]*`wibble:foo -> wobble:bar`/.test(md2));
+ok("a trailing prose comment survives as a tail note",
+   md2.indexOf("retune") > md2.lastIndexOf("2. "), md2.indexOf("retune"));
 if (show) console.log("\n" + demoMd.split("\n").map((l) => "    " + l).join("\n"));
 
 // A bare `* mod:` places a module with nothing said about it.
@@ -212,6 +238,44 @@ ok("the orphan line does not land anywhere", gap.params.delay.length === 1,
    gap.params.delay);
 const between = ctx.parse("* delay: time = 3:8\nvco:saw -> out:in-l\n| feedback = 45%");
 ok("a cable still ends the block", between.errors.length === 1);
+
+// A backward cable's lane must never sit above the boxes it crosses. The wrap
+// gutter shortcut only applies while the destination really is lower than the
+// source; when dragging contradicts that, the lane falls back to routing below
+// everything in its span.
+console.log("\nbackward lanes");
+{
+  // mixer feeds vcf but sits to its right at the same height: a backward edge
+  // whose destination is NOT lower, with vco standing in the span. The wrap
+  // shortcut used to discard every box at or below the destination's y and
+  // draw the lane across open canvas above them.
+  const src = "vco:saw -> vcf:in\nmixer:out -> vcf:cutoff";
+  el("src").value = src;
+  ctx.patch = { name: "Lanes", src: src, notes: "", pos: {
+    vcf:   { x: 0,   y: 20 },
+    vco:   { x: 250, y: 20 },
+    mixer: { x: 600, y: 20 },
+  } };
+  const v = ctx.build();
+  const backEdge = v.edges.filter((e) => e.back && !e.self)[0];
+  ok("the setup produced a backward edge", !!backEdge);
+  const low = Math.max(...v.nodes.map((n) => n.y + n.h));
+  ok("its lane sits below every box it spans, never above",
+     backEdge && backEdge.yb > low, backEdge && [backEdge.yb, low]);
+}
+
+// Clicking a cable selects the line that wrote it. The arithmetic is the part
+// worth testing; the click itself needs a browser.
+console.log("\ncable click jump");
+el("src").value = "one\ntwo\nthree\nfour";
+const j1 = ctx.jumpToLine(2, 2);
+ok("a single line selects exactly itself", j1.start === 4 && j1.end === 7, j1);
+const j2 = ctx.jumpToLine(2, 3);
+ok("a span selects both lines, no trailing newline", j2.start === 4 && j2.end === 13, j2);
+const j3 = ctx.jumpToLine(1, 1);
+ok("the first line starts at zero and does not scroll", j3.start === 0 && j3.top === 0, j3);
+const j4 = ctx.jumpToLine(99, 99);
+ok("a line past the end degrades quietly", j4.start === j4.end && j4.start === el("src").value.length, j4);
 
 console.log("\nempty patch");
 ctx.parsed = ctx.parse("");

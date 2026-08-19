@@ -132,8 +132,18 @@ Shift-click adds a module to the selection or takes it out. Dragging on empty ca
 and anything the box touches is selected. Hold shift to add to what is already picked. Dragging a
 selected module moves the whole selection. Esc deselects.
 
-Positions belong to the patch and save as you go. There is no undo, so **Auto layout** is the way
-back.
+A plain click, no drag, selects the module and asks the diagram what it's connected to:
+everything not patched to it fades, and the editor lands on the first line that mentions it.
+Click it again to restore, or use **Show all**, which appears while anything is faded. If you'd
+rather clicking never faded the diagram, turn **Dim others** off above the diagram; the jump to
+the text stays either way.
+Clicking a cable jumps to the line that wrote it. Alt-click a cable to comment its line out,
+which takes it out of the patch; Cmd+Z in the editor brings it back, since the edit goes
+through the browser's own undo. Esc restores the full diagram.
+
+Positions belong to the patch and save as you go. There is no undo for moving boxes, so
+**Auto layout** is the way back — and it's on **Cmd+Enter** (Ctrl+Enter on Windows), since
+it's the button you want after every burst of typing.
 
 **Fit width** and **Fit page** above the diagram both only ever scale down. Fit width is for
 reading a wide diagram top to bottom; Fit page is for seeing all of a tall one at once.

@@ -8,13 +8,39 @@ is waiting on.
 
 ## Unreleased
 
-- A parameter block now ends at a blank line. Previously a `|` continuation
-  bound to the last `* module:` header any distance above it, so a stray line
-  could silently attach its settings to the wrong module. The block is the `*`
-  line plus the `|` lines directly under it; comments inside are fine. An
-  orphaned `|` line is an error naming the rule. Patch and score both. No
-  shipped example or existing patch relied on the old behaviour.
+- **Click a module to see what it's connected to.** A plain click (no drag)
+  selects the box, fades every module and cable not patched to it, and lands
+  the editor on the first line that mentions it. Clicking the same box again
+  restores, as do Esc, empty canvas, and a **Show all** button that appears
+  while anything is faded. A **Dim others** toggle above the diagram turns the
+  fading off entirely, leaving click-to-jump; the choice persists. Stacks with
+  the section filter rather than replacing it.
+- **Alt-click a cable to disable it.** Comments the cable's line out, so it
+  vanishes from the diagram and the patch, and Cmd+Z brings it back — the edit
+  goes through the browser's own undo. Alt-click can't re-enable what it can no
+  longer see, so the way back is undo, the text, or the guide's Not patched
+  list.
+- **The guide reads comments now.** A comment block above the first line joins
+  the preamble; a comment above a cable prints under that cable's step; and a
+  comment shaped like a connection — the importer's disabled cables, and
+  alt-click's — is never printed as prose. Those list at the end under **Not
+  patched**, resolved to panel names where the modules exist and shown as
+  written where they don't.
+- **Cmd+Enter (or Ctrl+Enter) runs Auto layout**, from anywhere including the
+  editor. The one shortcut, for the one button reached for after every burst of
+  typing.
+- **Click a cable to jump to its line.** The editor selects the line that wrote
+  the cable, with the browser's own selection, and scrolls it into view. A
+  merged stereo pair written as two lines selects both. The clickable area is
+  far wider than the drawn stroke, so no aiming.
 
+- **A backward cable could draw its lane across open canvas, well above the
+  boxes it crossed.** A backward edge classified as a row-wrap only cleared
+  boxes in its own row and above, which assumes the destination sits lower
+  than the source. Drag the boxes so it doesn't and the lane was computed
+  against almost nothing and landed near the top of the canvas. The gutter
+  shortcut now applies only while the destination really is lower; otherwise
+  the lane routes below everything in its span, like any other return.
 - Tests now ship in `test/` and run on every push and pull request: the library
   validator, the parser and guide against the shipped examples, and a drift
   check that fails if the validation rules in `test/` and `modules.html` stop

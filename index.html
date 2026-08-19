@@ -250,6 +250,7 @@ h2 .spacer{flex:1}
   position:sticky; top:0; z-index:5;
 }
 #zoombar button{padding:2px 8px; font-size:12px}
+#zoombar button.on{background:var(--accent-soft); border-color:var(--accent); color:var(--accent)}
 #zoombar select{padding:2px 6px; font-size:12px}
 #zoombar .vrule{margin:0 2px}
 #zoomlvl{color:var(--ink2); font-size:12px; min-width:44px; text-align:center;
@@ -460,8 +461,10 @@ vca:out -> delay:in &quot;a note on the cable&quot;"></textarea>
         <button id="zfitpage" title="Scale down until the whole diagram fits">Fit page</button>
         <button id="z100">100%</button>
         <div class="vrule"></div>
-        <button id="btidy" title="Arrange the boxes by signal flow">Auto layout</button>
+        <button id="btidy" title="Arrange the boxes by signal flow (Cmd or Ctrl + Enter)">Auto layout</button>
         <select id="vfilter" title="Fade everything outside one section" style="display:none"></select>
+        <button id="bdim" title="When on, clicking a module fades everything not patched to it">Dim others</button>
+        <button id="bshowall" style="display:none" title="Esc or clicking empty canvas does this too">Show all</button>
       </div>
       <div id="guidectl" style="display:none">
         <button id="gcopy">Copy</button>
@@ -1426,12 +1429,18 @@ function build(){
     if (e.self || !e.back) return;
 
     var lo = Math.min(x1, x2) - 34, hi = Math.max(x1, x2) + 34;
+    /* A wrap only has to clear what's in its own row and above — it's heading
+       down to the next row, not back over the whole diagram. But that gutter
+       shortcut is only safe while the destination really is lower. Drag the
+       boxes so it isn't and the shortcut discards nearly everything in the
+       span, computes the lane against nothing, and draws the line high across
+       open canvas. When the geometry contradicts the classification, geometry
+       wins: route below everything, like any other return. */
+    var gutter = e.wrap && e.b.y > e.a.y + e.a.h;
     var clear = 0;
     list.forEach(function(n){
       if (n.x + n.w < lo || n.x > hi) return;
-      /* A wrap only has to clear what's in its own row and above — it's heading
-         down to the next row, not back over the whole diagram. */
-      if (e.wrap && n.y >= e.b.y) return;
+      if (gutter && n.y >= e.b.y) return;
       clear = Math.max(clear, n.y + n.h);
     });
     var y = clear + 20, moved = true;
@@ -1464,6 +1473,20 @@ function build(){
   edges.forEach(function(e){
     e.dim = !!state.voice && !e.cables.some(function(c){ return c.voice === state.voice; });
   });
+
+  /* Selection focuses the diagram the same way the section filter does: pick a
+     module and everything not patched to it fades, which answers "what is this
+     connected to" without reading anything. Union across a multi-selection,
+     stacked on top of the voice dim rather than replacing it. */
+  if (selCount() && ui.selDim){
+    var keep = {};
+    for (var sk in sel) keep[sk] = 1;
+    edges.forEach(function(e){
+      if (sel[e.a.key] || sel[e.b.key]){ keep[e.a.key] = 1; keep[e.b.key] = 1; }
+    });
+    list.forEach(function(n){ n.dim = n.dim || !keep[n.key]; });
+    edges.forEach(function(e){ e.dim = e.dim || !(sel[e.a.key] || sel[e.b.key]); });
+  }
 
   view = { nodes:list, edges:edges, guessed:guessed, unknown:unknown, allCables:allCables,
            w: w,
@@ -1829,6 +1852,16 @@ function render(){
       gc.appendChild(el("text", { x:(fx+gx)/2, y: back ? yb - 5 : (sy+dy)/2 - 6,
         "text-anchor":"middle", "font-size":9.5, fill:TH.ink2, "font-style":"italic" }, note));
     }
+
+    /* Click a cable, land on the line that wrote it. The visible stroke is a
+       miserable click target at 2.2px, so an invisible fat twin catches the
+       click and carries the line numbers — a stereo pair can come from two
+       lines, so it's a span. */
+    var lns = e.cables.map(function(c){ return c.line; });
+    gc.appendChild(el("path", { d:d, fill:"none", stroke:"#000",
+      "stroke-opacity":0, "stroke-width":14, "pointer-events":"stroke",
+      cursor:"pointer", "data-lo":Math.min.apply(null,lns),
+      "data-hi":Math.max.apply(null,lns) }));
   });
 
   /* A port's colour should agree with the cable plugged into it. Colouring it
@@ -1927,6 +1960,13 @@ function render(){
   report();
   updateStat();
   renderGuide();  /* no-op unless the guide is the visible pane */
+
+  /* The focus controls say what state the diagram is in. "Dim others" shows
+     whether clicking will fade; "Show all" only exists while something is
+     actually faded, and is the visible way back. */
+  var bd = document.getElementById("bdim"), bs = document.getElementById("bshowall");
+  if (bd) bd.classList.toggle("on", !!ui.selDim);
+  if (bs) bs.style.display = (selCount() && ui.selDim) ? "" : "none";
 }
 
 /* SVG text does not wrap. Break the notes into lines that fit the diagram width,
@@ -2025,11 +2065,82 @@ function svgPt(svg, ev){
    has to be idempotent. It wasn't: every render added another mousedown
    listener, and by the time you'd dragged a few boxes a single click was
    running the handler dozens of times. */
+/* Select lines lo..hi in the editor and scroll them into view. Native
+   selection through setSelectionRange: no overlay to keep in sync, and the
+   browser draws it. The 20.6 line height matches caretXY. Returns the range so
+   the arithmetic is testable without a DOM. */
+function jumpToLine(lo, hi){
+  var ta = document.getElementById("src");
+  var lines = ta.value.split("\n");
+  var start = 0, i;
+  for (i = 0; i < lo - 1 && i < lines.length; i++) start += lines[i].length + 1;
+  var end = start;
+  for (i = lo - 1; i <= hi - 1 && i < lines.length; i++) end += lines[i].length + 1;
+  if (end > start) end -= 1;   /* keep the trailing newline out of it */
+  /* The last line has no trailing newline, so a line number past the end
+     overshoots the buffer by one. */
+  start = Math.min(start, ta.value.length);
+  end = Math.min(end, ta.value.length);
+  var top = Math.max(0, (lo - 1) * 20.6 - 60);
+  if (ta.setSelectionRange){ ta.focus(); ta.setSelectionRange(start, end); }
+  ta.scrollTop = top;
+  return { start:start, end:end, top:top };
+}
+
+/* Comment a cable's lines out, or back in. execCommand is deprecated and also
+   the only way to edit a textarea that keeps the browser's own undo stack
+   alive, which matters here more than anywhere: this is a write triggered from
+   the diagram, and Cmd+Z must undo it. The disabled cable vanishes from the
+   diagram immediately — comments are stripped before it's built — so the way
+   back is undo, the text, or the guide's Not patched list. */
+function toggleLines(lo, hi){
+  var ta = document.getElementById("src");
+  var r = jumpToLine(lo, hi);
+  var text = ta.value.slice(r.start, r.end);
+  if (!text.trim()) return;
+  var lines = text.split("\n");
+  var allOff = lines.every(function(L){ return !L.trim() || /^\s*\/\//.test(L); });
+  var out = lines.map(function(L){
+    if (!L.trim()) return L;
+    return allOff ? L.replace(/^(\s*)\/\/\s?/, "$1") : L.replace(/^(\s*)/, "$1// ");
+  }).join("\n");
+  if (out === text) return;
+  if (document.execCommand && document.execCommand("insertText", false, out)) return;
+  /* No execCommand means no native undo either way, so setRangeText is not a
+     downgrade there. */
+  ta.setRangeText(out, r.start, r.end, "end");
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/* Where a module first appears in the text: its earliest cable, or failing
+   that its parameter block. */
+function firstMention(key){
+  var best = null;
+  parsed.cables.forEach(function(c){
+    if (c.from.key === key || c.to.key === key)
+      best = best === null ? c.line : Math.min(best, c.line);
+  });
+  (parsed.params[key] || []).forEach(function(p){
+    best = best === null ? p.line : Math.min(best, p.line);
+  });
+  return best;
+}
+
 function wireDrag(svg){
   if (svg.__wired) return;
   svg.__wired = true;
   svg.addEventListener("mousedown", function(ev){
     if (ev.button !== 0) return;
+    /* A cable first, before the band logic gets a chance to treat the click as
+       empty canvas and clear the selection. */
+    var hp = ev.target.closest ? ev.target.closest("[data-lo]") : null;
+    if (hp){
+      ev.preventDefault();
+      /* Alt-click disables the cable, plain click jumps to it. */
+      if (ev.altKey) toggleLines(+hp.getAttribute("data-lo"), +hp.getAttribute("data-hi"));
+      else jumpToLine(+hp.getAttribute("data-lo"), +hp.getAttribute("data-hi"));
+      return;
+    }
     var g = ev.target.closest ? ev.target.closest(".box") : null;
     var p = svgPt(svg, ev);
 
@@ -2057,7 +2168,10 @@ function wireDrag(svg){
       return;
     }
     /* Dragging an unselected box selects just it, so a plain drag behaves the
-       way it always did. Dragging one that is already selected keeps the set. */
+       way it always did. Dragging one that is already selected keeps the set.
+       Whether it was already selected decides what a no-move click means at
+       endDrag: focus, or unfocus. */
+    var wasSel = !!sel[key];
     if (!sel[key]){ clearSel(); sel[key] = 1; }
 
     var keys = Object.keys(sel), from = {};
@@ -2070,7 +2184,8 @@ function wireDrag(svg){
       if (!from[k]) return;
       minx = Math.min(minx, from[k].x); miny = Math.min(miny, from[k].y);
     });
-    drag = { svg:svg, px:p.x, py:p.y, from:from, minx:minx, miny:miny, moved:false };
+    drag = { svg:svg, px:p.x, py:p.y, from:from, minx:minx, miny:miny, moved:false,
+             key:key, wasSel:wasSel };
     g.classList.add("dragging");
     document.addEventListener("mousemove", onDrag);
     document.addEventListener("mouseup", endDrag);
@@ -2100,9 +2215,20 @@ function onDrag(ev){
 function endDrag(){
   document.removeEventListener("mousemove", onDrag);
   document.removeEventListener("mouseup", endDrag);
-  /* A click that never moved anything is a click, so it leaves one box picked
-     rather than a stale selection of one. */
-  drag = null; save(); render();
+  /* A click that never moved anything is a click, and it toggles. First click
+     picks the box, which fades everything not patched to it and lands the
+     editor on its first mention. Clicking a box that was already picked clears
+     the selection, so the way back is the same gesture that got you in, not
+     just Esc or empty canvas. A drag does none of this. */
+  var wasClick = drag && !drag.moved && drag.key;
+  var wasSel = drag && drag.wasSel;
+  drag = null; save();
+  if (wasClick && wasSel) clearSel();
+  render();
+  if (wasClick && !wasSel){
+    var ln = firstMention(wasClick);
+    if (ln !== null) jumpToLine(ln, ln);
+  }
 }
 
 function onBand(ev){
@@ -2917,6 +3043,37 @@ function guideJackName(mod, jid){
   return j ? j.label : jid;
 }
 
+/* What the parser strips, the guide reads back — carefully, because "comment"
+   means two things in this language and only one of them may be printed as
+   prose. A body shaped like a connection is a disabled cable: the PatchBook
+   importer writes exactly those for modules you don't own, and alt-click on a
+   cable makes more of them. Printing one as commentary would hand you an
+   instruction the patch doesn't contain, so they go to a Not patched list at
+   the end instead. The arrow is the test; resolvability is not, since the
+   importer's whole point is modules that don't resolve. */
+function scanComments(src){
+  var lines = (src || "").split("\n");
+  var ARROW = /(->|>>|→|\b[pgtc]>)/;
+  var first = null;
+  lines.forEach(function(raw, i){
+    if (first !== null) return;
+    var t = raw.trim();
+    if (t && !/^(#|\/\/)/.test(t)) first = i + 1;
+  });
+  var out = { preamble: [], prose: [], disabled: [] };
+  lines.forEach(function(raw, i){
+    var t = raw.trim();
+    var m = t.match(/^(?:\/\/|#)\s?(.*)$/);
+    if (!m) return;
+    var body = m[1].trim();
+    if (!body) return;
+    if (ARROW.test(body)) out.disabled.push(body.replace(/^-\s+/, ""));
+    else if (first === null || i + 1 < first) out.preamble.push(body);
+    else out.prose.push({ line: i + 1, text: body });
+  });
+  return out;
+}
+
 function buildGuide(){
   var groups = [], byName = {};
   function group(name){
@@ -2943,15 +3100,17 @@ function buildGuide(){
     g.setup.push({ name: guideModName(base, inst), params: parsed.params[k] });
   });
 
-  var n = 0;
+  var n = 0, allSteps = [];
   groups.forEach(function(g){
     g.steps = g.steps.map(function(c){
-      return { n: ++n,
+      var s = { n: ++n, line: c.line,
         fromMod:  guideModName(c.from.mod, c.from.inst),
         fromJack: guideJackName(c.from.mod, c.from.jack),
         toMod:    guideModName(c.to.mod, c.to.inst),
         toJack:   guideJackName(c.to.mod, c.to.jack),
-        note: c.note || "" };
+        note: c.note || "", comments: [] };
+      allSteps.push(s);
+      return s;
     });
   });
   /* An unnamed group only needs a heading when there are named ones to tell it
@@ -2959,7 +3118,38 @@ function buildGuide(){
   var named = groups.filter(function(g){ return g.name; }).length;
   groups.forEach(function(g){ g.title = g.name || (named ? "Patch" : ""); });
 
+  /* Prose comments attach to the step that follows them in the source, which
+     is where their author wrote them. A chain makes several steps from one
+     line; the comment lands on the first. One with no step after it becomes a
+     tail note rather than vanishing. */
+  var sc = scanComments(patch.src);
+  var tail = [];
+  sc.prose.forEach(function(cm){
+    var best = null;
+    allSteps.forEach(function(s){
+      if (s.line > cm.line && (!best || s.line < best.line ||
+          (s.line === best.line && s.n < best.n))) best = s;
+    });
+    if (best) best.comments.push(cm.text);
+    else tail.push(cm.text);
+  });
+
+  /* Disabled cables, resolved to panel names where the modules exist and left
+     as written where they don't, which is exactly the imported-patch case. */
+  var notPatched = sc.disabled.map(function(body){
+    var p = parse(body);
+    if (p.cables.length === 1){
+      var c = p.cables[0];
+      return { fromMod: guideModName(c.from.mod, c.from.inst),
+               fromJack: guideJackName(c.from.mod, c.from.jack),
+               toMod: guideModName(c.to.mod, c.to.inst),
+               toJack: guideJackName(c.to.mod, c.to.jack) };
+    }
+    return { raw: body };
+  });
+
   return { name: patch.name || "Untitled patch", notes: (patch.notes || "").trim(),
+           preamble: sc.preamble, tail: tail, notPatched: notPatched,
            groups: groups, count: n,
            modules: Object.keys(parsed.cables.reduce(function(a, c){
              a[c.from.key] = a[c.to.key] = 1; return a; }, {})).length };
@@ -2971,6 +3161,8 @@ function guideHTML(){
   h += '<div class="gmeta">' + g.count + " cable" + (g.count === 1 ? "" : "s") +
        " · " + g.modules + " module" + (g.modules === 1 ? "" : "s") + "</div>";
   if (g.notes) h += '<div class="gnotes">' + esc(g.notes).replace(/\n/g, "<br>") + "</div>";
+  if (g.preamble.length)
+    h += '<div class="gnotes">' + g.preamble.map(esc).join("<br>") + "</div>";
   if (!g.count) h += '<div class="gempty">Nothing to patch yet. Write some cables and this fills in.</div>';
 
   g.groups.forEach(function(grp){
@@ -2995,12 +3187,29 @@ function guideHTML(){
           '<td class="garr">&rarr;</td>' +
           '<td class="gmod">' + esc(s.toMod) + "</td>" +
           '<td class="gj">' + esc(s.toJack) + "</td></tr>";
-        if (s.note)
-          h += '<tr class="grow-note"><td></td><td colspan="5">' + esc(s.note) + "</td></tr>";
+        var under = s.comments.concat(s.note ? [s.note] : []);
+        if (under.length)
+          h += '<tr class="grow-note"><td></td><td colspan="5">' +
+               under.map(esc).join("<br>") + "</td></tr>";
       });
       h += "</table>";
     }
   });
+  if (g.tail.length)
+    h += '<div class="gnotes" style="margin-top:16px">' + g.tail.map(esc).join("<br>") + "</div>";
+  if (g.notPatched.length){
+    h += "<h2>Not patched</h2><table class='gsteps'>";
+    g.notPatched.forEach(function(s){
+      h += s.raw
+        ? '<tr><td class="gn"></td><td colspan="5" class="mono" style="color:var(--ink3)">' +
+          esc(s.raw) + "</td></tr>"
+        : '<tr><td class="gn"></td>' +
+          '<td class="gmod">' + esc(s.fromMod) + '</td><td class="gj">' + esc(s.fromJack) + "</td>" +
+          '<td class="garr">&rarr;</td>' +
+          '<td class="gmod">' + esc(s.toMod) + '</td><td class="gj">' + esc(s.toJack) + "</td></tr>";
+    });
+    h += "</table><div class='hint'>Commented out in the source, so not part of the patch.</div>";
+  }
   return h + "</div>";
 }
 
@@ -3010,6 +3219,7 @@ function guideMarkdown(){
            g.count + " cable" + (g.count === 1 ? "" : "s") +
            " · " + g.modules + " module" + (g.modules === 1 ? "" : "s"), ""];
   if (g.notes) L.push(g.notes, "");
+  if (g.preamble.length) L.push(g.preamble.join("\n"), "");
   g.groups.forEach(function(grp){
     if (grp.title) L.push("## " + grp.title, "");
     if (grp.setup.length){
@@ -3021,12 +3231,22 @@ function guideMarkdown(){
       L.push("");
     }
     grp.steps.forEach(function(s){
+      var under = s.comments.concat(s.note ? [s.note] : []);
       L.push(s.n + ". " + s.fromMod + " **" + s.fromJack + "** → " +
              s.toMod + " **" + s.toJack + "**" +
-             (s.note ? "  \n   " + s.note : ""));
+             under.map(function(t){ return "  \n   " + t; }).join(""));
     });
     if (grp.steps.length) L.push("");
   });
+  if (g.tail.length) L.push(g.tail.join("\n"), "");
+  if (g.notPatched.length){
+    L.push("## Not patched", "");
+    g.notPatched.forEach(function(s){
+      L.push("- " + (s.raw ? "`" + s.raw + "`"
+        : s.fromMod + " **" + s.fromJack + "** → " + s.toMod + " **" + s.toJack + "**"));
+    });
+    L.push("");
+  }
   return L.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\s+$/, "") + "\n";
 }
 
@@ -3372,7 +3592,7 @@ document.getElementById("babout").addEventListener("click", function(){
    the patch file.
 */
 var LS_UI = "patching-ui-v1";
-var ui = { sidebar:400, msgs:180, zoom:1, focus:"", view:"diagram" };
+var ui = { sidebar:400, msgs:180, zoom:1, focus:"", view:"diagram", selDim:true };
 try { var u = JSON.parse(lsGet(LS_UI)); if (u) for (var k in u) ui[k] = u[k]; } catch(e){}
 function saveUI(){ try { localStorage.setItem(LS_UI, JSON.stringify(ui)); } catch(e){} }
 /* Full-width focus for either pane. One at a time, Escape restores, and the
@@ -3423,6 +3643,12 @@ function setView(which){
   if (g) renderGuide(); else setTimeout(fitWidth, 0);
   saveUI();
 }
+document.getElementById("bdim").addEventListener("click", function(){
+  ui.selDim = !ui.selDim; saveUI(); render();
+});
+document.getElementById("bshowall").addEventListener("click", function(){
+  clearSel(); render();
+});
 document.getElementById("vdiagram").addEventListener("click", function(){ setView("diagram"); });
 document.getElementById("vguide").addEventListener("click", function(){ setView("guide"); });
 document.getElementById("gprint").addEventListener("click", function(){ window.print(); });
@@ -3448,6 +3674,17 @@ document.addEventListener("keydown", function(ev){
 document.addEventListener("keydown", function(ev){
   if (ev.key !== "Escape" || ev.__escHandled || !ui.focus) return;
   ui.focus = ""; applyFocus(); saveUI(); setTimeout(fitWidth, 0);
+});
+
+/* The one keyboard shortcut, for the one button reached for after every burst
+   of typing. Modifier plus Enter so it works from inside the editor, where the
+   cursor lives. Deliberately not a shortcut system: everything else here is
+   used too rarely to be worth colliding with the browser's own bindings. */
+document.addEventListener("keydown", function(ev){
+  if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter"){
+    ev.preventDefault();
+    document.getElementById("btidy").click();
+  }
 });
 
 function applyLayout(){
