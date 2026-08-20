@@ -232,6 +232,20 @@ table.ref td{border:none; border-bottom:1px solid var(--line); padding:5px 12px 
 table.ref td:first-child{white-space:nowrap; color:var(--ink); width:1%; padding-right:18px}
 .empty pre{background:var(--surface); border:1px solid var(--line); border-radius:6px;
   padding:10px 12px; font:12px/1.6 var(--mono); color:var(--ink2); overflow:auto}
+
+/* One breakpoint, matching the patch page: the drawn score above, the text
+   below, reading first. */
+@media (max-width:760px){
+  body{height:100dvh}
+  #top{flex-wrap:wrap; row-gap:6px}
+  #stat{display:none}
+  #cols{flex-direction:column}
+  #hsplit{display:none !important}
+  #right{order:-1; flex:1 1 62%; min-height:0}
+  #left{order:1; width:100% !important; min-width:0; flex:0 0 38%;
+    border-top:1px solid var(--line)}
+  #veil{padding:10px}
+}
 </style>
 </head>
 <body>

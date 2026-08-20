@@ -298,6 +298,30 @@ h2 .spacer{flex:1}
 
 /* Cmd+P gives the pane you're looking at and nothing else. Wanted for the
    diagram anyway; the guide is the thing you actually carry to the rack. */
+/* One breakpoint, reading first. Below it the panes stack with the diagram on
+   top, because someone arriving on a phone wants to look at a patch, not type
+   one — the editor stays underneath, functional but secondary. Dragging boxes
+   needs pointer events the app doesn't have, so arranging stays on the
+   desktop; auto layout, tap-to-focus, the guide and the section filter all
+   work from taps as they are. */
+@media (max-width:760px){
+  /* 100vh on iOS includes the address bar, which is the classic way an app
+     shell puts its last row under the chrome. dvh tracks the visible part. */
+  body{height:100dvh}
+  #top{flex-wrap:wrap; row-gap:6px}
+  #stat{display:none}
+  #cols{flex-direction:column}
+  #hsplit{display:none !important}
+  /* Inline widths from the pane-focus code lose to these on purpose. */
+  #right{order:-1; min-width:0; flex:1 1 62%; min-height:0}
+  #left{order:1; width:100% !important; flex:0 0 38%; min-height:0;
+    border-right:none; border-top:1px solid var(--line)}
+  #msgs{max-height:84px}
+  #zoombar{flex-wrap:wrap; row-gap:4px}
+  #guidewrap{padding:16px 14px}
+  #veil{padding:10px}
+}
+
 @media print{
   html,body{height:auto; overflow:visible; background:#fff}
   #top,#left,#hsplit,#zoombar,#veil{display:none !important}
@@ -3806,6 +3830,16 @@ if (!M.length){
   paintList();
   render();
   save();   /* so a freshly created patch survives a reload even if you never type */
+  /* On a phone the diagram opens scrolled off its own right edge unless it's
+     fitted, because the SVG carries an explicit width. Fit on arrival, and
+     again when the phone rotates — which arrives as a resize. Desktop resizes
+     are left alone: zoom there is a choice the user made. */
+  if (window.innerWidth <= 760) setTimeout(fitWidth, 0);
+  var refit = null;
+  window.addEventListener("resize", function(){
+    clearTimeout(refit);
+    refit = setTimeout(function(){ if (window.innerWidth <= 760) fitWidth(); }, 150);
+  });
   if (!withJacks) msg("err", "No jack data found in modules.js or jack-seed.js. Run the annotator first.");
 }
 

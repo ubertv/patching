@@ -73,6 +73,8 @@ const ctx = {
   alert() {}, confirm: () => false, prompt: () => null,
   XMLSerializer: class { serializeToString() { return ""; } },
 };
+ctx.addEventListener = () => {};
+ctx.innerWidth = 1400;
 ctx.window = ctx;
 ctx.self = ctx;
 vm.createContext(ctx);

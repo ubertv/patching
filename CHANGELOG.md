@@ -8,6 +8,16 @@ is waiting on.
 
 ## Unreleased
 
+- **A phone gets a readable app instead of a broken one.** Below 760px the
+  panes stack, diagram first, editor underneath: someone arriving from a link
+  wants to look at a patch before they type one. The diagram fits itself to the
+  screen on arrival and again on rotate, the layout uses the visible viewport
+  so the bottom row doesn't hide behind Safari's chrome, and the top bar wraps.
+  Tap works where click works: a module fades to its connections, a cable jumps
+  to its line, the guide reads as it always did. Arranging boxes stays desktop:
+  dragging needs pointer events the app doesn't have, and auto layout already
+  answers on a phone. Same treatment on all three pages.
+
 - **Click a module to see what it's connected to.** A plain click (no drag)
   selects the box, fades every module and cable not patched to it, and lands
   the editor on the first line that mentions it. Clicking the same box again

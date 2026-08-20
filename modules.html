@@ -207,6 +207,19 @@ td select{padding:2px 4px}
 .sheet details[open] summary{margin-bottom:8px}
 .sheet details div{color:var(--ink2); font-size:12.5px; line-height:1.6; max-width:62ch}
 .sheet textarea{height:340px; font-family:var(--mono); font-size:11.5px; line-height:1.55}
+
+/* One breakpoint, matching the patch page. The list sits above the detail
+   pane; both scroll. Editing works from a phone, it's just not the point. */
+@media (max-width:760px){
+  body{height:100dvh}
+  #top{flex-wrap:wrap; row-gap:6px}
+  #stat{display:none}
+  #cols{flex-direction:column}
+  #left{width:100%; flex:0 0 40%; min-height:0;
+    border-right:none; border-bottom:1px solid var(--line)}
+  #mid{min-width:0}
+  #veil{padding:10px}
+}
 </style>
 </head>
 <body>
