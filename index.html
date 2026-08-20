@@ -308,16 +308,45 @@ h2 .spacer{flex:1}
   /* 100vh on iOS includes the address bar, which is the classic way an app
      shell puts its last row under the chrome. dvh tracks the visible part. */
   body{height:100dvh}
-  #top{flex-wrap:wrap; row-gap:6px}
-  #stat{display:none}
+
+  /* The top bar becomes two DELIBERATE rows rather than whatever flex-wrap
+     felt like. Row one is identity and app chrome: brand, nav, theme, Help.
+     Row two is the document: File, which patch, its name, Share. The break
+     between them is a full-width pseudo-element; items after it are sent
+     there by order. Dropped entirely: the rules (meaningless once wrapped),
+     the save-state text, and the standalone Export SVG button, which is the
+     first item in Share. */
+  #top{flex-wrap:wrap; row-gap:6px; padding:6px 10px}
+  #top .vrule, #pstate, #stat, #bsvg, #top h1{display:none}
+  #top::after{content:""; width:100%; height:0; order:1}
+  #top > *{flex-shrink:0}
+  #top .menu.left, #plist, #pname, #top .menu:has(#bpb){order:2}
+  #plist{max-width:34%; flex-shrink:1}
+  #pname{flex:1 1 80px; min-width:80px}
+
   #cols{flex-direction:column}
-  #hsplit{display:none !important}
+  #hsplit, #vsplit{display:none !important}
   /* Inline widths from the pane-focus code lose to these on purpose. */
-  #right{order:-1; min-width:0; flex:1 1 62%; min-height:0}
-  #left{order:1; width:100% !important; flex:0 0 38%; min-height:0;
+  #right{order:-1; min-width:0; flex:1 1 58%; min-height:0}
+  #left{order:1; width:100% !important; flex:0 0 42%; min-height:0;
     border-right:none; border-top:1px solid var(--line)}
-  #msgs{max-height:84px}
+  #left h2{margin:6px 0 2px}
+  #msgs{max-height:64px}
+
+  /* No Notes editor on a phone. The text still shows where it's read — the
+     diagram footer and the guide preamble — and writing prose about a patch
+     is desk work. All of its room goes to the editor. */
+  #notewrap{display:none}
+
+  /* The canvas bar keeps what a reader uses: the Diagram/Guide toggle, zoom
+     in and out, one Fit, the section filter, Show all — which matters more
+     here than on the desktop, since a phone has no Esc — and the expand
+     button. The rest is desktop furniture: the zoom readout, 100%, the second
+     Fit, the dim preference, and Auto layout, which on a phone would wreck an
+     arrangement you have no way to drag back. */
   #zoombar{flex-wrap:wrap; row-gap:4px}
+  #zoombar .vrule, #zoomlvl, #z100, #zfitpage, #btidy, #bdim{display:none}
+
   #guidewrap{padding:16px 14px}
   #veil{padding:10px}
 }

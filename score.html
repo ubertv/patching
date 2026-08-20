@@ -237,8 +237,10 @@ table.ref td:first-child{white-space:nowrap; color:var(--ink); width:1%; padding
    below, reading first. */
 @media (max-width:760px){
   body{height:100dvh}
-  #top{flex-wrap:wrap; row-gap:6px}
-  #stat{display:none}
+  #top{flex-wrap:wrap; row-gap:6px; padding:6px 10px}
+  #top .vrule, #stat, #top h1{display:none}
+  #top > *{flex-shrink:0}
+  #nav{flex-shrink:1}
   #cols{flex-direction:column}
   #hsplit{display:none !important}
   #right{order:-1; flex:1 1 62%; min-height:0}

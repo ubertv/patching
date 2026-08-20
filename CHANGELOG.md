@@ -11,8 +11,16 @@ is waiting on.
 - **A phone gets a readable app instead of a broken one.** Below 760px the
   panes stack, diagram first, editor underneath: someone arriving from a link
   wants to look at a patch before they type one. The diagram fits itself to the
-  screen on arrival and again on rotate, the layout uses the visible viewport
-  so the bottom row doesn't hide behind Safari's chrome, and the top bar wraps.
+  screen on arrival and again on rotate, and the layout uses the visible
+  viewport so the bottom row doesn't hide behind Safari's chrome. The top bar
+  becomes two deliberate rows — app chrome above, the document below — instead
+  of wrapping wherever it broke, and drops what a phone doesn't need: the
+  rules, the save-state text, the wordmark, and the Export SVG button that
+  Share already carries. The Notes editor is gone on a phone —
+  the text still shows in the diagram footer and the guide preamble, and
+  writing prose about a patch is desk work — so all of its room goes to the
+  editor. The canvas bar slims to what a reader uses: view toggle, zoom, one
+  Fit, the section filter, Show all and expand.
   Tap works where click works: a module fades to its connections, a cable jumps
   to its line, the guide reads as it always did. Arranging boxes stays desktop:
   dragging needs pointer events the app doesn't have, and auto layout already
