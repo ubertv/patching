@@ -6,7 +6,15 @@ each of them, so a screenshot says which copy someone is running.
 `0.x` means the format may still move. See the note at the bottom for what 1.0
 is waiting on.
 
-## Unreleased
+## 0.2.0 — 20 August 2026
+
+The diagram answers back, and a phone gets a page.
+
+Click things: a module fades the diagram to its connections, a cable jumps to
+the line that wrote it, alt-click disables one. The guide reads comments. Tests
+run on every push. One format change, which is what earns the version bump: a
+parameter block now ends at a blank line.
+
 
 - **A first visit opens on a real example.** The patch page lands on *Basic
   voice*, drawn, fitted and editable, instead of an empty editor. Seeded only
