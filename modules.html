@@ -216,10 +216,19 @@ td select{padding:2px 4px}
   #top .vrule, #stat, #top h1{display:none}
   #top > *{flex-shrink:0}
   #nav{flex-shrink:1}
-  #cols{flex-direction:column}
-  #left{width:100%; flex:0 0 40%; min-height:0;
+  body{height:auto; min-height:100dvh; overflow:auto}
+  #cols{flex:none; flex-direction:column; height:auto}
+  #left{width:100%; flex:none; height:56dvh; min-height:0;
     border-right:none; border-bottom:1px solid var(--line)}
-  #mid{min-width:0}
+  #mid{min-width:0; flex:none; height:auto; overflow:visible}
+  /* Selection gets the room: New module lives in the File menu, the bulk
+     buttons are desktop housekeeping, and the category chips become one
+     row that scrolls sideways instead of stacking three deep. */
+  #search, input[type=text], select{font-size:16px}
+  #bnew, #bulk{display:none}
+  #chips-host{overflow-x:auto}
+  #chips{flex-wrap:nowrap; width:max-content; padding-right:8px}
+  #search{margin:6px 8px}
   #veil{padding:10px}
 }
 </style>

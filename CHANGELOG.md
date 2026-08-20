@@ -8,23 +8,38 @@ is waiting on.
 
 ## Unreleased
 
-- **A phone gets a readable app instead of a broken one.** Below 760px the
-  panes stack, diagram first, editor underneath: someone arriving from a link
-  wants to look at a patch before they type one. The diagram fits itself to the
-  screen on arrival and again on rotate, and the layout uses the visible
-  viewport so the bottom row doesn't hide behind Safari's chrome. The top bar
-  becomes two deliberate rows — app chrome above, the document below — instead
-  of wrapping wherever it broke, and drops what a phone doesn't need: the
-  rules, the save-state text, the wordmark, and the Export SVG button that
-  Share already carries. The Notes editor is gone on a phone —
-  the text still shows in the diagram footer and the guide preamble, and
-  writing prose about a patch is desk work — so all of its room goes to the
-  editor. The canvas bar slims to what a reader uses: view toggle, zoom, one
-  Fit, the section filter, Show all and expand.
-  Tap works where click works: a module fades to its connections, a cable jumps
-  to its line, the guide reads as it always did. Arranging boxes stays desktop:
-  dragging needs pointer events the app doesn't have, and auto layout already
-  answers on a phone. Same treatment on all three pages.
+- **A first visit opens on a real example.** The patch page lands on *Basic
+  voice*, drawn, fitted and editable, instead of an empty editor. Seeded only
+  when there is nothing of anyone's anywhere and only once, so deleting it
+  stays deleted; `loadExample`'s own idempotence sits underneath, so even a
+  stale flag can't duplicate anything.
+- **The score page opens on a real example.** A first visit used to show an
+  empty state with the sample greyed out as placeholder text; now that sample
+  loads as an actual score, drawn and editable, named "Example score". Seeded
+  once and only when there is nothing of anyone's anywhere, so it can't sit on
+  top of real work, and deleting or clearing it sticks. The sample text lives
+  in the textarea's placeholder, so there is exactly one copy of it.
+
+- **A phone gets a readable page instead of a broken app.** The intention is
+  narrow on purpose: the phone is the shop window, someone arriving from a
+  link explores enough to want it on a computer. So below 760px the app shell
+  becomes a document. Nothing shares the screen: the page scrolls, diagram
+  first at natural height, editor or guide below, with the canvas bar riding
+  sticky so Diagram/Guide and Fit stay reachable. The diagram fits itself on
+  arrival and on rotate. The top bar is two deliberate rows — app chrome,
+  then the document — and drops what a phone doesn't need; the Notes editor
+  and the desktop furniture on the canvas bar go entirely. Tapping a module
+  fades the diagram to its connections and scrolls the text, but no longer
+  focuses the editor, because focus on a phone summons the keyboard —
+  "show me" had turned into "prepare to type". On the patch page the editor
+  is exactly as tall as the patch, no inner scrollbar, the page does the
+  scrolling. On the modules page the selection list gets the room: the chips
+  scroll sideways in one row, the bulk buttons and the New module button step
+  back (File still has it), and the detail scrolls at full height below.
+  Fields are 16px on a phone, which is the size below which iOS
+  "helpfully" zooms the whole page at the first tap into the editor and never
+  zooms back. Arranging boxes and real editing stay on the desktop,
+  deliberately.
 
 - **Click a module to see what it's connected to.** A plain click (no drag)
   selects the box, fades every module and cable not patched to it, and lands

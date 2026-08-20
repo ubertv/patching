@@ -236,16 +236,33 @@ table.ref td:first-child{white-space:nowrap; color:var(--ink); width:1%; padding
 /* One breakpoint, matching the patch page: the drawn score above, the text
    below, reading first. */
 @media (max-width:760px){
-  body{height:100dvh}
+  /* Same shape as the patch page: a scrolling document, score first, source
+     under it, and the editor exactly as tall as its text. */
+  body{height:auto; min-height:100dvh; overflow:auto}
+
+  /* Two deliberate rows: app chrome above, the document below. Dropped for
+     the phone: the rules, the save state, the experiment badge, the wordmark,
+     the against-patch selector and the primary Export button, which File
+     carries. */
   #top{flex-wrap:wrap; row-gap:6px; padding:6px 10px}
-  #top .vrule, #stat, #top h1{display:none}
+  #top .vrule, #stat, #top h1, #sstate, .expt, #bexport, #top label{display:none}
+  #top::after{content:""; width:100%; height:0; order:1}
   #top > *{flex-shrink:0}
-  #nav{flex-shrink:1}
-  #cols{flex-direction:column}
-  #hsplit{display:none !important}
-  #right{order:-1; flex:1 1 62%; min-height:0}
-  #left{order:1; width:100% !important; min-width:0; flex:0 0 38%;
-    border-top:1px solid var(--line)}
+  #top .menu.left, #slist, #sname{order:2}
+  #slist{max-width:34%; flex-shrink:1}
+  #sname{flex:1 1 80px; min-width:80px}
+
+  #cols{flex:none; flex-direction:column; height:auto}
+  #hsplit, #vsplit{display:none !important}
+  #focused, #focusc{display:none}
+  #right{order:-1; display:flex !important; flex:none; height:auto; min-width:0}
+  #left{order:1; display:flex !important; width:100% !important; min-width:0;
+    flex:none; height:auto; border-top:1px solid var(--line)}
+
+  /* field-sizing where the browser has it, sizeSrcToContent() as fallback. */
+  #left textarea{flex:none; height:auto; min-height:30dvh; overflow:hidden;
+    field-sizing:content}
+  textarea, input[type=text], select{font-size:16px}
   #veil{padding:10px}
 }
 </style>
@@ -837,7 +854,19 @@ function glyph(shape, opts){
    The SECTIONS answer "what do I do next", which is what you want on a music
    stand with your hands full.
 */
+/* Same fallback as the patch page for browsers without field-sizing: the
+   editor is measured against its content so the page, not the box, scrolls. */
+function sizeSrcToContent(){
+  var ta = document.getElementById("src");
+  if (!ta || !ta.style) return;
+  var native = window.CSS && CSS.supports && CSS.supports("field-sizing", "content");
+  if (native || window.innerWidth > 760){ ta.style.height = ""; return; }
+  ta.style.height = "auto";
+  ta.style.height = ((ta.scrollHeight || 0) + 6) + "px";
+}
+
 function render(){
+  sizeSrcToContent();
   var res = parse(document.getElementById("src").value);
   drawMsgs(res);
   var host = document.getElementById("out");
@@ -1514,6 +1543,18 @@ document.getElementById("babout").addEventListener("click", function(){
 
 boot();
 function boot(){
+  /* A fresh visit opens on the sample score as real content, drawn and
+     editable, rather than an empty state with grey placeholder text — the
+     rendered score is the shop window. Seeded only when there is nothing of
+     anyone's anywhere: no file scores, at most this one empty score, and
+     never twice, so clearing it or deleting it stays cleared. The text is
+     the textarea's own placeholder, so there is one copy of the sample. */
+  if (!store.seeded && !(score.src || "").trim() &&
+      !FILEORDER.length && scoreIds().length <= 1){
+    score.src = document.getElementById("src").placeholder;
+    score.name = "Example score";
+    store.seeded = 1;
+  }
   /* showScore first: paintPatches marks the bound patch selected, and it can
      only do that once it knows which score is open. */
   showScore(score);

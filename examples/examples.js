@@ -12,8 +12,9 @@ window.PATCH_EXAMPLES = [
   name: "Basic voice",
   about: "The simplest complete patch. Start here.",
   src:
-`// The classic first patch: something to make a note, something to shape it,
-// something to let it through.
+`// Basic example.
+// Oscillator output to a filter, then to a VCA.
+// An envelope CV out to both the filter cutoff and the VCA.
 
 seq:cv p> vco:voct
 seq:gate g> env:gate
@@ -29,8 +30,9 @@ vca:out -> out:in-l
   name: "Subtractive voice",
   about: "The same idea, filled out with modulation and an effect.",
   src:
-`// A subtractive voice built entirely from generic modules, so it reads
-// without owning any particular gear.
+`// Subtractive voice, all generic modules.
+// The same voice as the basic example, plus a clocked sequencer, PWM from an
+// LFO, sample & hold on the resonance, and a delay before the output.
 
 VOICE 1:
 	- Sequencer (CV) p> VCO (V/OCT)
@@ -66,11 +68,10 @@ OUTPUT:
   name: "Generative",
   about: "Plays itself. All six cable types and a feedback loop.",
   src:
-`// Generative patch — it plays itself.
-//
-// Nothing here is sequenced by hand. Pitch comes from sampling noise and
-// quantising it, rhythm comes from dividing one clock several ways, and the
-// delay tail feeds back into the oscillator so it never quite repeats.
+`// Generative patch. No sequencer.
+// Pitch is sampled noise through a quantizer. Rhythm is one clock divided
+// four ways, with XOR logic firing the drum. The delay's wet output feeds
+// back into the VCO FM input.
 
 CLOCK:
 	- Clock (OUT) c> Clock divider (CLOCK)
@@ -98,7 +99,7 @@ OUTPUT:
 	- Drum voice (OUT) -> Mixer (IN 2)
 	- Mixer (OUT) -> Delay (IN)
 	- Delay (OUT) -> Output (IN L)
-	- Delay (WET) >> VCO (FM) "feedback — the tail bends the next note"
+	- Delay (WET) >> VCO (FM) "the delay tail bends the next note"
 
 	* Clock: bpm = 96
 	* Quantizer:
@@ -116,18 +117,12 @@ OUTPUT:
   name: "Krell",
   about: "The self-retriggering generative patch. A module patched into itself.",
   src:
-`// The Krell patch.
-//
-// Named for the Krell in Forbidden Planet, whose 1956 electronic score Louis
-// and Bebe Barron built from circuits they deliberately drove to failure. The
-// patch as modular people know it was popularised by Todd Barton on the Buchla
-// Music Easel.
-//
-// The whole trick is one line: the envelope's end-of-cycle output goes back
-// into its own trigger, so it retriggers itself forever. Then its attack and
-// decay times are themselves randomised, so it never settles into a rhythm.
-// Each new cycle also samples a fresh pitch. Nothing is sequenced; nothing
-// repeats; it plays until you unplug it.
+`// Krell patch.
+// The envelope's end-of-cycle output retriggers its own trigger input, so it
+// free-runs. Random CV sets each cycle's attack and decay, and each cycle
+// samples a new pitch.
+// Named for the 1956 Forbidden Planet score by Louis and Bebe Barron. The
+// modular version is Todd Barton's, on the Buchla Music Easel.
 
 SELF-CYCLING CORE:
 	- Envelope (EOC) g> Envelope (TRIG) "the whole patch is this one cable"
@@ -164,10 +159,10 @@ VOICE:
   name: "Stereo drone",
   about: "Stereo pairs, a mult feeding three destinations, two of one module.",
   src:
-`// Stereo drone — two detuned oscillators into reverb.
-//
-// One LFO does three jobs at once through a mult, and the compressor's
-// envelope output feeds back to open the filter as the drone swells.
+`// Stereo drone.
+// Two detuned oscillators summed, folded and filtered, into reverb. One LFO
+// through a mult drives the cutoff, the fold and the detune. The compressor's
+// envelope output raises the filter resonance with the level.
 
 DRONE:
 	- VCO 1 (SAW) -> Mixer (IN 1)
@@ -207,16 +202,11 @@ OUTPUT:
   name: "Lead and drone",
   about: "Two voices, named roles, and one LFO shared between them.",
   src:
-`// Two parts playing at once, written so the diagram says which is which.
-//
-// Voices are the parts: LEAD and DRONE are drawn as labelled regions.
-// Roles are the jobs: vco#lead and vco#drone are two boxes, each captioned.
-//
-// The LFO belongs to neither. It feeds both parts, so it sits outside both
-// regions rather than being filed under whichever came first.
-//
-// Note the drone's two oscillator outputs go through their own mixer. Two cables
-// cannot share one input, on a real rack or here.
+`// Two voices.
+// LEAD and DRONE are sections. vco#lead and vco#drone are named instances,
+// drawn as separate boxes. lfo#drift feeds both sections, so it sits outside
+// both. The drone's two oscillator outputs get their own mixer, because two
+// cables cannot share one input.
 
 LEAD:
 	seq:cv p> vco#lead:voct

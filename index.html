@@ -324,14 +324,41 @@ h2 .spacer{flex:1}
   #plist{max-width:34%; flex-shrink:1}
   #pname{flex:1 1 80px; min-width:80px}
 
-  #cols{flex-direction:column}
+  /* The phone version is a document, not an app shell. Nothing shares the
+     screen: the page scrolls, diagram first at its natural height, guide or
+     text under it. Nobody works here — the phone's job is to show someone
+     enough to open it on a computer — so reading order beats everything-
+     visible-at-once. Inline styles from the pane-focus code lose to these on
+     purpose, which also means pane focus is simply not a thing on a phone. */
+  body{height:auto; min-height:100dvh; overflow:auto}
+  #cols{flex:none; flex-direction:column; height:auto; min-height:0}
   #hsplit, #vsplit{display:none !important}
-  /* Inline widths from the pane-focus code lose to these on purpose. */
-  #right{order:-1; min-width:0; flex:1 1 58%; min-height:0}
-  #left{order:1; width:100% !important; flex:0 0 42%; min-height:0;
-    border-right:none; border-top:1px solid var(--line)}
+  #focused, #focusc{display:none}
+  #right{order:-1; display:flex !important; min-width:0; flex:none; height:auto}
+  #canvaswrap{flex:none; overflow-x:auto; padding:12px}
+  #guidewrap{flex:none; height:auto; overflow:visible}
+  #left{order:1; display:flex !important; width:100% !important; flex:none;
+    height:auto; border-right:none; border-top:1px solid var(--line)}
   #left h2{margin:6px 0 2px}
+  /* The editor is exactly as tall as the text in it, so it has no inner
+     scrollbar and the page is the only thing that scrolls. field-sizing is
+     the real mechanism on current browsers; sizeSrcToContent() measures as a
+     fallback on older ones. Both flex roles are stripped so neither the pane
+     column nor the wrap can impose a height of their own. */
+  /* iOS zooms the whole page toward any focused field whose text is under
+     16px, and does not zoom back. Exactly 16 defuses it. Costs a little
+     density on the phone; the desktop keeps its size. The autocomplete's
+     hand-tuned pixel metrics drift at this size, which is accepted — typing
+     on a phone is possible, not the point. */
+  #src, #pname, #notes, #plist, #vfilter{font-size:16px}
+  #srcwrap{flex:none; display:block}
+  #src{flex:none; height:auto; min-height:30dvh; overflow:hidden;
+    field-sizing:content}
   #msgs{max-height:64px}
+  /* The canvas bar rides along, so Diagram/Guide and Fit stay reachable
+     however far down the diagram you've scrolled. */
+  #zoombar{position:sticky; top:0; z-index:30; background:var(--surface);
+    border-bottom:1px solid var(--line)}
 
   /* No Notes editor on a phone. The text still shows where it's read — the
      diagram footer and the guide preamble — and writing prose about a patch
@@ -2035,6 +2062,7 @@ function render(){
   report();
   updateStat();
   renderGuide();  /* no-op unless the guide is the visible pane */
+  sizeSrcToContent();
 
   /* The focus controls say what state the diagram is in. "Dim others" shows
      whether clicking will fade; "Show all" only exists while something is
@@ -2157,7 +2185,12 @@ function jumpToLine(lo, hi){
   start = Math.min(start, ta.value.length);
   end = Math.min(end, ta.value.length);
   var top = Math.max(0, (lo - 1) * 20.6 - 60);
-  if (ta.setSelectionRange){ ta.focus(); ta.setSelectionRange(start, end); }
+  /* Focusing a textarea on a touch device summons the keyboard, which turns
+     "show me the line" into "prepare to type", the one thing a phone user
+     wasn't doing. On coarse pointers the editor scrolls to the line but is
+     not focused; the selection would be invisible unfocused anyway. */
+  var coarse = window.matchMedia && window.matchMedia("(pointer:coarse)").matches;
+  if (!coarse && ta.setSelectionRange){ ta.focus(); ta.setSelectionRange(start, end); }
   ta.scrollTop = top;
   return { start:start, end:end, top:top };
 }
@@ -3699,6 +3732,21 @@ function applyFocus(){
 /* The guide is rebuilt on switch and on every render, not cached. It's a pure
    function over the parse, and a patch big enough for that to cost anything
    would be too big to follow anyway. */
+/* On a phone the editor is exactly as tall as the patch and the page does the
+   scrolling; a textarea will not do that by itself, so it's measured against
+   its own content on every render. On the desktop the inline height is cleared
+   and the pane layout owns it again. */
+function sizeSrcToContent(){
+  var ta = document.getElementById("src");
+  if (!ta || !ta.style) return;
+  /* Where field-sizing:content is understood, CSS owns the height and this
+     must not fight it. */
+  var native = window.CSS && CSS.supports && CSS.supports("field-sizing", "content");
+  if (native || window.innerWidth > 760){ ta.style.height = ""; return; }
+  ta.style.height = "auto";
+  ta.style.height = ((ta.scrollHeight || 0) + 6) + "px";
+}
+
 function renderGuide(){
   if (ui.view !== "guide") return;
   document.getElementById("guidewrap").innerHTML = guideHTML();
@@ -3859,6 +3907,18 @@ if (!M.length){
   paintList();
   render();
   save();   /* so a freshly created patch survives a reload even if you never type */
+  /* A fresh visit opens on Basic voice, drawn and editable, rather than an
+     empty editor — the first thirty seconds are the shop window. Same guards
+     as the score page: only when there is nothing of anyone's anywhere, and
+     only once, so deleting it stays deleted. loadExample brings its own
+     idempotence on top, so even a stale flag cannot duplicate anything. */
+  if (!store.seeded && !FILEORDER.length && patchIds().length <= 1 &&
+      !(patch.src || "").trim() && EXAMPLES.length){
+    store.seeded = 1;
+    var first = 0;
+    EXAMPLES.forEach(function(ex, i){ if (ex.name === "Basic voice") first = i; });
+    loadExample(first);
+  }
   /* On a phone the diagram opens scrolled off its own right edge unless it's
      fitted, because the SVG carries an explicit width. Fit on arrival, and
      again when the phone rotates — which arrives as a resize. Desktop resizes
@@ -3867,7 +3927,10 @@ if (!M.length){
   var refit = null;
   window.addEventListener("resize", function(){
     clearTimeout(refit);
-    refit = setTimeout(function(){ if (window.innerWidth <= 760) fitWidth(); }, 150);
+    refit = setTimeout(function(){
+      sizeSrcToContent();
+      if (window.innerWidth <= 760) fitWidth();
+    }, 150);
   });
   if (!withJacks) msg("err", "No jack data found in modules.js or jack-seed.js. Run the annotator first.");
 }
