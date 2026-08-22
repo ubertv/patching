@@ -3628,9 +3628,12 @@ function paintExamples(){
   var host = document.getElementById("exmenu");
   if (!host || !EXAMPLES.length) return;
   host.innerHTML = '<hr><div class="lbl">Start from an example</div>' +
+    /* Name only. The other File items carry a <small> line because what they do
+       isn't obvious from the label; an example's name is the whole story, and
+       six two-line buttons made the menu the tallest thing on the page. The
+       `about` field stays in examples.js as the description of record. */
     EXAMPLES.map(function(ex, i){
-      return '<button data-ex="'+i+'">'+esc(ex.name)+
-        (ex.about ? '<small>'+esc(ex.about)+'</small>' : '')+'</button>';
+      return '<button data-ex="'+i+'">'+esc(ex.name)+'</button>';
     }).join("");
   host.addEventListener("click", function(ev){
     var b = ev.target.closest("[data-ex]");
